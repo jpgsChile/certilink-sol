@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, type FormEvent, type ChangeEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ShieldCheck, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { APP_NAME } from "@/lib/constants";
+import { BrandLogo } from "@/components/BrandLogo";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 
@@ -19,11 +19,11 @@ export default function Register() {
   const { signUp } = useAuth();
   const { toast } = useToast();
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (form.password.length < 6) {
       toast({ title: "Error", description: "La contraseña debe tener al menos 6 caracteres", variant: "destructive" });
@@ -48,12 +48,7 @@ export default function Register() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-6 py-12">
       <div className="w-full max-w-md">
-        <div className="flex items-center gap-2.5 mb-8">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-primary">
-            <ShieldCheck className="h-5 w-5 text-primary-foreground" />
-          </div>
-          <span className="text-xl font-bold text-foreground">{APP_NAME}</span>
-        </div>
+        <BrandLogo to="/" size="md" className="mb-8" />
 
         <div>
           <h2 className="text-2xl font-bold text-foreground">Solicitar acceso</h2>

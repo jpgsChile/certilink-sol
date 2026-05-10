@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { ShieldCheck, Search, CheckCircle, XCircle, Award, Calendar, BookOpen, User, Building2, Loader2, ExternalLink, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { BrandLogo } from "@/components/BrandLogo";
 import { APP_NAME } from "@/lib/constants";
 import { certificadosService } from "@/lib/services/certificados.service";
 import type { CertificadoConDetalles } from "@/lib/database.types";
@@ -44,14 +45,9 @@ export default function Verify() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border bg-card">
+      <header className="sticky top-0 z-10 border-b border-border bg-white/90 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-4xl items-center justify-between px-4 sm:px-6">
-          <Link to="/" className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-primary">
-              <ShieldCheck className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-lg font-bold text-foreground tracking-tight">{APP_NAME}</span>
-          </Link>
+          <BrandLogo to="/" size="md" />
           <Link to="/login">
             <Button variant="outline" size="sm" className="text-sm">
               Acceso institucional

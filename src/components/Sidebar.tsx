@@ -6,10 +6,10 @@ import {
   BookOpen,
   Award,
   ChevronLeft,
-  ShieldCheck,
   X,
 } from "lucide-react";
-import { NAV_ITEMS, APP_NAME } from "@/lib/constants";
+import { NAV_ITEMS, LOGO_URL } from "@/lib/constants";
+import { BrandLogo } from "@/components/BrandLogo";
 
 const ICON_MAP: Record<string, ElementType> = {
   LayoutDashboard,
@@ -38,29 +38,43 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
 
   return (
     <aside className={sidebarClasses}>
-      {/* Logo area */}
-      <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border">
-        <Link to="/dashboard" className="flex items-center gap-2.5 overflow-hidden">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-primary">
-            <ShieldCheck className="h-5 w-5 text-primary-foreground" />
-          </div>
-          {!collapsed && (
-            <span className="text-lg font-bold text-sidebar-primary-foreground tracking-tight">
-              {APP_NAME}
-            </span>
+      <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
+        <div className="min-w-0 overflow-hidden">
+          {collapsed ? (
+            <Link
+              to="/dashboard"
+              className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-sidebar-accent/40 ring-1 ring-white/10"
+              aria-label="Inicio"
+            >
+              <img
+                src={LOGO_URL}
+                alt=""
+                className="max-h-full max-w-full object-contain p-0.5"
+                decoding="async"
+              />
+            </Link>
+          ) : (
+            <BrandLogo
+              to="/dashboard"
+              size="md"
+              className="min-w-0"
+              wordmarkClassName="text-sidebar-primary-foreground"
+              imgClassName="ring-white/10"
+              showWordmark={false}
+            />
           )}
-        </Link>
+        </div>
 
-        {/* Mobile close */}
         <button
+          type="button"
           onClick={onMobileClose}
           className="rounded-md p-1.5 text-sidebar-muted hover:text-sidebar-accent-foreground lg:hidden"
         >
           <X className="h-5 w-5" />
         </button>
 
-        {/* Desktop collapse */}
         <button
+          type="button"
           onClick={onToggle}
           className="hidden rounded-md p-1.5 text-sidebar-muted hover:text-sidebar-accent-foreground lg:block"
         >
@@ -70,7 +84,6 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
         </button>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
         {!collapsed && (
           <p className="mb-3 px-3 text-[11px] font-semibold uppercase tracking-widest text-sidebar-muted">
@@ -96,16 +109,11 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
         })}
       </nav>
 
-      {/* Footer */}
       <div className="border-t border-sidebar-border p-4">
         {!collapsed && (
           <div className="rounded-lg bg-sidebar-accent p-3">
-            <p className="text-xs font-medium text-sidebar-accent-foreground">
-              Plataforma OTEC
-            </p>
-            <p className="mt-0.5 text-[11px] text-sidebar-muted">
-              Certificación digital segura
-            </p>
+            <p className="text-xs font-medium text-sidebar-accent-foreground">Plataforma OTEC</p>
+            <p className="mt-0.5 text-[11px] text-sidebar-muted">Certificación digital segura</p>
           </div>
         )}
       </div>

@@ -4,6 +4,9 @@
 export const APP_NAME = "CertiLink";
 export const APP_DESCRIPTION = "Plataforma de certificación digital para instituciones OTEC";
 
+/** Logo principal en UI (`public/logo.png`). El favicon del sitio sigue siendo `public/favicon.svg` en `index.html`. */
+export const LOGO_URL = "/logo.png";
+
 // Navigation items
 export const NAV_ITEMS = [
   { label: "Panel", path: "/dashboard", icon: "LayoutDashboard" },

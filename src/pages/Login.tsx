@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ShieldCheck, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { APP_NAME } from "@/lib/constants";
+import { BrandLogo } from "@/components/BrandLogo";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 
@@ -17,7 +17,7 @@ export default function Login() {
   const { signIn } = useAuth();
   const { toast } = useToast();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     try {
@@ -42,12 +42,12 @@ export default function Login() {
         </div>
 
         <div className="relative z-10 flex flex-col justify-between p-12">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-foreground/10 backdrop-blur-sm border border-primary-foreground/20">
-              <ShieldCheck className="h-6 w-6 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold text-primary-foreground tracking-tight">{APP_NAME}</span>
-          </div>
+          <BrandLogo
+            to="/"
+            size="lg"
+            wordmarkClassName="text-primary-foreground"
+            imgClassName="ring-primary-foreground/25 bg-primary-foreground/10"
+          />
 
           <div className="max-w-md">
             <h1 className="text-4xl font-bold text-primary-foreground leading-tight">
@@ -83,12 +83,7 @@ export default function Login() {
       <div className="flex flex-1 items-center justify-center px-6 py-12 bg-background">
         <div className="w-full max-w-sm">
           {/* Mobile logo */}
-          <div className="flex items-center gap-2.5 mb-8 lg:hidden">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-primary">
-              <ShieldCheck className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold text-foreground">{APP_NAME}</span>
-          </div>
+          <BrandLogo to="/" size="md" className="mb-8 lg:hidden" />
 
           <div>
             <h2 className="text-2xl font-bold text-foreground">Iniciar sesión</h2>
