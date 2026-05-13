@@ -7,8 +7,10 @@ import {
   Award,
   ChevronLeft,
   X,
+  Activity,
 } from "lucide-react";
 import { NAV_ITEMS, LOGO_URL } from "@/lib/constants";
+import { isSupabaseDiagnosticsEnabled } from "@/lib/supabase";
 import { BrandLogo } from "@/components/BrandLogo";
 
 const ICON_MAP: Record<string, ElementType> = {
@@ -107,6 +109,17 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
             </Link>
           );
         })}
+        {isSupabaseDiagnosticsEnabled() && (
+          <Link
+            to="/diagnostico"
+            onClick={onMobileClose}
+            className={`sidebar-nav-item ${location.pathname === "/diagnostico" ? "active" : ""} ${collapsed ? "justify-center px-2" : ""}`}
+            title={collapsed ? "Diagnóstico Supabase" : undefined}
+          >
+            <Activity className="h-5 w-5 shrink-0" />
+            {!collapsed && <span>Diagnóstico Supabase</span>}
+          </Link>
+        )}
       </nav>
 
       <div className="border-t border-sidebar-border p-4">

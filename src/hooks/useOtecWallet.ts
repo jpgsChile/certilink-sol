@@ -29,7 +29,7 @@ interface OtecWalletState {
 }
 
 export function useOtecWallet(): OtecWalletState {
-  const { otec } = useAuth();
+  const { otec, refreshOtec, patchOtec } = useAuth();
   const { publicKey, connected } = useWallet();
   const [savedAddress, setSavedAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,6 +60,8 @@ export function useOtecWallet(): OtecWalletState {
     }
     await saveOtecWallet(otec.id, connectedAddress);
     setSavedAddress(connectedAddress);
+    patchOtec({ wallet_address: connectedAddress });
+    await refreshOtec();
   };
 
   return {

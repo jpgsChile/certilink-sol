@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useRef, useMemo, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Award, Search, Plus, ExternalLink, Copy, Check, Loader2, Trash2, MoreHorizontal } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/PageHeader";
@@ -43,27 +44,105 @@ import { useCursos } from "@/hooks/useCursos";
 import { useAuth } from "@/hooks/useAuth";
 import { useOtecWallet } from "@/hooks/useOtecWallet";
 import { useMintCertificate, type IssueCertificateParams } from "@/hooks/useMintCertificate";
+import { isPinataConfigured } from "@/lib/services/pinata.service";
+import { DiplomaCaptureHost, type DiplomaCaptureHandle } from "@/components/credential/DiplomaCaptureHost";
+import { CredentialPreviewDialog } from "@/components/credential/CredentialPreviewDialog";
+import type { DiplomaCertificateFrameProps } from "@/components/credential/DiplomaCertificateFrame";
 import { useToast } from "@/hooks/use-toast";
-import { certificadosService } from "@/lib/services/certificados.service";
+import type { Certificado, CursoAlumnoConAlumno } from "@/lib/database.types";
+import { certificadosService, certificadoPublicExplorer } from "@/lib/services/certificados.service";
+import { cursoAlumnosService } from "@/lib/services/curso-alumnos.service";
+import { formatSupabaseUserError } from "@/lib/supabase-error";
 
 export default function Certificates() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedAlumno, setSelectedAlumno] = useState("");
   const [selectedCurso, setSelectedCurso] = useState("");
+  const [cursoEnrollments, setCursoEnrollments] = useState<CursoAlumnoConAlumno[]>([]);
+  const [enrollmentsLoading, setEnrollmentsLoading] = useState(false);
+  const [enrollmentsError, setEnrollmentsError] = useState<string | null>(null);
   const [fechaEmision, setFechaEmision] = useState(new Date().toISOString().split("T")[0]);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [mintModalOpen, setMintModalOpen] = useState(false);
+  const [credentialPreviewOpen, setCredentialPreviewOpen] = useState(false);
+  const [pendingCredentialIssue, setPendingCredentialIssue] = useState<IssueCertificateParams | null>(null);
+  const [credentialIssueSubmitting, setCredentialIssueSubmitting] = useState(false);
 
-  const { certificados, loading, deleteCertificado, emitidosCount, pendientesCount, refetch } = useCertificados();
-  const { alumnos } = useAlumnos();
-  const { cursos } = useCursos();
+  const credentialCaptureRef = useRef<DiplomaCaptureHandle | null>(null);
+  const { certificados, loading, error: certificadosError, deleteCertificado, emitidosCount, pendientesCount, refetch } =
+    useCertificados();
+  const { alumnos, loading: alumnosLoading, error: alumnosError } = useAlumnos();
+  const { cursos, loading: cursosLoading, error: cursosError } = useCursos();
   const { otec } = useAuth();
   const { isVerified, isConnected } = useOtecWallet();
-  const { state: mintState, issueCertificate, reset: resetMint } = useMintCertificate();
+  const { state: mintState, issueCertificate, reset: resetMint } = useMintCertificate(credentialCaptureRef);
   const { toast } = useToast();
+
+  const listsLoading = alumnosLoading || cursosLoading;
+  const dialogListsLoading = listsLoading || (!!selectedCurso && enrollmentsLoading);
+
+  const loadCursoEnrollments = useCallback(
+    async (cursoId: string) => {
+      if (!otec?.id) {
+        setCursoEnrollments([]);
+        setEnrollmentsError(null);
+        return;
+      }
+      setEnrollmentsLoading(true);
+      setEnrollmentsError(null);
+      try {
+        const rows = await cursoAlumnosService.listByCurso(otec.id, cursoId);
+        setCursoEnrollments(rows);
+      } catch (err: unknown) {
+        setCursoEnrollments([]);
+        setEnrollmentsError(formatSupabaseUserError(err));
+      } finally {
+        setEnrollmentsLoading(false);
+      }
+    },
+    [otec?.id]
+  );
+
+  useEffect(() => {
+    if (!selectedCurso) {
+      setCursoEnrollments([]);
+      setEnrollmentsError(null);
+      return;
+    }
+    void loadCursoEnrollments(selectedCurso);
+  }, [selectedCurso, loadCursoEnrollments]);
+
+  const approvedCount = useMemo(() => cursoEnrollments.filter((e) => e.aprobado).length, [cursoEnrollments]);
+
+  const selectedEnrollment = useMemo(
+    () => cursoEnrollments.find((e) => e.alumno_id === selectedAlumno) ?? null,
+    [cursoEnrollments, selectedAlumno]
+  );
+
+  const canEmitCredential = Boolean(selectedEnrollment?.aprobado);
+
+  useEffect(() => {
+    const c = searchParams.get("cursoId");
+    const a = searchParams.get("alumnoId");
+    if (!c || !a) return;
+    setSelectedCurso(c);
+    setSelectedAlumno(a);
+    setDialogOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete("cursoId");
+    next.delete("alumnoId");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (!selectedCurso) return;
+    const ids = new Set(cursoEnrollments.map((e) => e.alumno_id));
+    if (selectedAlumno && !ids.has(selectedAlumno)) setSelectedAlumno("");
+  }, [selectedCurso, selectedAlumno, cursoEnrollments]);
 
   const filteredCerts = certificados.filter((c) => {
     const studentName = c.alumnos ? `${c.alumnos.nombre} ${c.alumnos.apellido}` : "";
@@ -77,17 +156,88 @@ export default function Certificates() {
     );
   });
 
-  const handleCopy = (hash: string) => {
+  const credentialPreviewDiploma = useMemo((): DiplomaCertificateFrameProps | null => {
+    if (!pendingCredentialIssue) return null;
+    const issueDateLabel = new Date(pendingCredentialIssue.fechaEmision).toLocaleDateString("es-CL", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    return {
+      institutionName: pendingCredentialIssue.institutionName,
+      studentName: pendingCredentialIssue.studentName,
+      courseName: pendingCredentialIssue.courseName,
+      courseHours: pendingCredentialIssue.courseHours,
+      issueDateLabel,
+      verificationCode: "CL-······",
+      verifyUrl: `${typeof window !== "undefined" ? window.location.origin : ""}/verificar`,
+      isPreview: true,
+    };
+  }, [pendingCredentialIssue]);
+
+  const handleConfirmCredentialPreview = async () => {
+    const params = pendingCredentialIssue;
+    if (!params || credentialIssueSubmitting) return;
+    setCredentialIssueSubmitting(true);
+    try {
+      setCredentialPreviewOpen(false);
+      setMintModalOpen(true);
+      const { result, error } = await issueCertificate(params);
+      setPendingCredentialIssue(null);
+      if (result) {
+        await refetch();
+        toast({
+          title: "Emisión verificada completada",
+          description: "Credencial digital con diploma, IPFS y registro blockchain guardada correctamente.",
+        });
+      } else if (error) {
+        toast({ title: "No se pudo completar la emisión", description: error, variant: "destructive" });
+      }
+    } finally {
+      setCredentialIssueSubmitting(false);
+    }
+  };
+
+  const handleCopy = async (hash: string) => {
     const code = certificadosService.hashToCode(hash);
-    navigator.clipboard.writeText(`${window.location.origin}/verificar/${code}`);
-    setCopiedCode(hash);
-    setTimeout(() => setCopiedCode(null), 2000);
+    const url = `${window.location.origin}/verificar/${code}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedCode(hash);
+      setTimeout(() => setCopiedCode(null), 2000);
+    } catch {
+      toast({
+        title: "No se pudo copiar al portapapeles",
+        description: "Copie manualmente la dirección o permita el acceso al portapapeles en el navegador.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleIssue = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (dialogListsLoading) {
+      toast({ title: "Espere un momento", description: "Cargando cursos e inscripciones aprobadas…", variant: "destructive" });
+      return;
+    }
     if (!selectedAlumno || !selectedCurso) {
-      toast({ title: "Error", description: "Seleccione estudiante y curso", variant: "destructive" });
+      toast({ title: "Error", description: "Seleccione curso y participante aprobado", variant: "destructive" });
+      return;
+    }
+
+    if (!otec?.id) {
+      toast({ title: "Sesión incompleta", description: "No se encontró la institución.", variant: "destructive" });
+      return;
+    }
+
+    const enrollment = await cursoAlumnosService.getApprovedEnrollment(otec.id, selectedCurso, selectedAlumno);
+    if (!enrollment) {
+      toast({
+        title: "Emisión no permitida",
+        description:
+          "El participante debe estar inscrito en el curso y marcado como aprobado en Cursos → Participantes del curso.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -98,11 +248,18 @@ export default function Certificates() {
 
     // Check if wallet is connected for blockchain minting
     if (isConnected && isVerified) {
-      // Full blockchain minting flow
-      setDialogOpen(false);
-      setMintModalOpen(true);
+      if (!isPinataConfigured()) {
+        toast({
+          title: "Configuración incompleta",
+          description:
+            "Para la emisión verificada con diploma e IPFS, configure VITE_PINATA_JWT en .env (Pinata JWT) y reinicie el entorno.",
+          variant: "destructive",
+        });
+        return;
+      }
 
-      const params: IssueCertificateParams = {
+      setDialogOpen(false);
+      setPendingCredentialIssue({
         alumnoId: alumno.id,
         cursoId: curso.id,
         fechaEmision,
@@ -111,34 +268,25 @@ export default function Certificates() {
         institutionName: otec.nombre,
         courseName: curso.nombre,
         courseHours: curso.horas,
-      };
+      });
+      setCredentialPreviewOpen(true);
+      return;
+    }
 
-      const result = await issueCertificate(params);
-      if (result) {
-        await refetch();
-      }
-    } else {
-      // Database-only flow (no blockchain, for when wallet is not connected)
-      try {
-        const cert = await certificadosService.create(
-          otec.id,
-          selectedAlumno,
-          selectedCurso,
-          fechaEmision
-        );
-        const code = certificadosService.hashToCode(cert.hash_sha256);
-        toast({
-          title: "Certificado registrado",
-          description: `Código: ${code}. Conecte su billetera institucional para registrarlo en la red de verificación.`,
-        });
-        await refetch();
-        setDialogOpen(false);
-        setSelectedAlumno("");
-        setSelectedCurso("");
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Error al emitir";
-        toast({ title: "Error", description: msg, variant: "destructive" });
-      }
+    try {
+      const cert = await certificadosService.create(otec.id, selectedAlumno, selectedCurso, fechaEmision);
+      const code = certificadosService.hashToCode(cert.hash_sha256);
+      toast({
+        title: "Certificado registrado",
+        description: `Código: ${code}. Conecte su billetera institucional para registrarlo en la red de verificación.`,
+      });
+      await refetch();
+      setDialogOpen(false);
+      setSelectedAlumno("");
+      setSelectedCurso("");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Error al emitir";
+      toast({ title: "Error", description: msg, variant: "destructive" });
     }
   };
 
@@ -161,6 +309,7 @@ export default function Certificates() {
     resetMint();
     setSelectedAlumno("");
     setSelectedCurso("");
+    setPendingCredentialIssue(null);
   };
 
   const columns = [
@@ -210,9 +359,9 @@ export default function Certificates() {
       key: "registro",
       label: "Registro Digital",
       render: (_: unknown, row: Record<string, unknown>) => {
-        const txHash = row.tx_hash as string | null;
-        const explorerUrl = row.explorer_url as string | null;
-        if (txHash && explorerUrl) {
+        const cert = row as unknown as Certificado;
+        const explorerUrl = certificadoPublicExplorer(cert);
+        if (cert.tx_hash && explorerUrl) {
           return (
             <a
               href={explorerUrl}
@@ -265,10 +414,28 @@ export default function Certificates() {
       <PageHeader
         title="Emisión de Certificados"
         description="Emita y gestione certificados digitales verificables"
-        actionLabel="Emitir Certificado"
+        actionLabel="Emitir credencial"
         actionIcon={Plus}
-        onAction={() => setDialogOpen(true)}
+        onAction={() => {
+          if (listsLoading) {
+            toast({
+              title: "Espere un momento",
+              description: "Cargando cursos…",
+            });
+            return;
+          }
+          setDialogOpen(true);
+        }}
       />
+
+      {(certificadosError || alumnosError || cursosError) && (
+        <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <p className="font-medium">No se pudieron cargar algunos datos</p>
+          <p className="mt-1 text-destructive/90">
+            {[certificadosError, alumnosError, cursosError].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+      )}
 
       {/* Stats bar */}
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -277,7 +444,7 @@ export default function Certificates() {
             <Award className="h-5 w-5 text-accent" />
           </div>
           <div>
-            <p className="text-sm text-muted-foreground">Emitidos</p>
+            <p className="text-sm text-muted-foreground">En cadena</p>
             <p className="text-lg font-bold text-foreground">{emitidosCount}</p>
           </div>
         </div>
@@ -286,7 +453,7 @@ export default function Certificates() {
             <Award className="h-5 w-5 text-warning" />
           </div>
           <div>
-            <p className="text-sm text-muted-foreground">Pendientes</p>
+            <p className="text-sm text-muted-foreground">Solo registro</p>
             <p className="text-lg font-bold text-foreground">{pendientesCount}</p>
           </div>
         </div>
@@ -328,8 +495,9 @@ export default function Certificates() {
       </div>
 
       {loading ? (
-        <div className="flex h-48 items-center justify-center">
+        <div className="flex h-48 flex-col items-center justify-center gap-2">
           <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          <p className="text-xs text-muted-foreground">Cargando certificados…</p>
         </div>
       ) : (
         <DataTable
@@ -343,31 +511,26 @@ export default function Certificates() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Emitir Certificado</DialogTitle>
+            <DialogTitle>Emitir credencial</DialogTitle>
             <DialogDescription>
-              Seleccione el estudiante y curso para generar un certificado digital verificable
+              Elija el curso y el participante inscrito. Solo los marcados como <span className="font-medium text-foreground">aprobados</span> en Cursos pueden emitir credencial.
             </DialogDescription>
           </DialogHeader>
-          <form className="space-y-4 mt-2" onSubmit={handleIssue}>
+          <form onSubmit={handleIssue} className="space-y-4 mt-2">
+            {enrollmentsError && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                No se pudieron cargar las inscripciones: {enrollmentsError}
+              </div>
+            )}
             <div className="space-y-2">
-              <Label>Estudiante</Label>
-              <Select value={selectedAlumno} onValueChange={setSelectedAlumno}>
-                <SelectTrigger className="h-10">
-                  <SelectValue placeholder="Seleccionar estudiante" />
-                </SelectTrigger>
-                <SelectContent>
-                  {alumnos.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.nombre} {s.apellido} - {s.rut}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Curso completado</Label>
-              <Select value={selectedCurso} onValueChange={setSelectedCurso}>
+              <Label>Curso</Label>
+              <Select
+                value={selectedCurso}
+                onValueChange={(v) => {
+                  setSelectedCurso(v);
+                  setSelectedAlumno("");
+                }}
+              >
                 <SelectTrigger className="h-10">
                   <SelectValue placeholder="Seleccionar curso" />
                 </SelectTrigger>
@@ -379,6 +542,54 @@ export default function Certificates() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Participante del curso</Label>
+              <Select value={selectedAlumno} onValueChange={setSelectedAlumno} disabled={!selectedCurso || enrollmentsLoading}>
+                <SelectTrigger className="h-10">
+                  <SelectValue
+                    placeholder={
+                      !selectedCurso
+                        ? "Seleccione un curso primero"
+                        : enrollmentsLoading
+                          ? "Cargando participantes…"
+                          : "Seleccionar participante"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {cursoEnrollments.map((en) => {
+                    const s = en.alumnos;
+                    if (!s) return null;
+                    const estado = en.aprobado ? "Aprobado" : "Pendiente de aprobación";
+                    return (
+                      <SelectItem key={en.id} value={s.id}>
+                        {s.nombre} {s.apellido} — {s.rut} · {estado}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+              {selectedCurso && !enrollmentsLoading && !enrollmentsError && cursoEnrollments.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No hay participantes inscritos en este curso. Use{" "}
+                  <span className="font-medium text-foreground">Cursos → Participantes del curso → Inscribir alumno</span>.
+                </p>
+              )}
+              {selectedCurso && !enrollmentsLoading && !enrollmentsError && cursoEnrollments.length > 0 && approvedCount === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Hay {cursoEnrollments.length} participante{cursoEnrollments.length !== 1 ? "s" : ""} inscrito
+                  {cursoEnrollments.length !== 1 ? "s" : ""}, pero ninguno está <span className="font-medium text-foreground">aprobado</span>. En{" "}
+                  <span className="font-medium text-foreground">Cursos → Participantes del curso</span> use{" "}
+                  <span className="font-medium text-foreground">Gestionar → Marcar como aprobado</span>.
+                </p>
+              )}
+              {selectedEnrollment && !selectedEnrollment.aprobado && (
+                <p className="text-xs text-amber-800 dark:text-amber-200/90">
+                  El participante seleccionado aún no está aprobado; no se puede emitir hasta aprobarlo en Cursos.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -394,9 +605,11 @@ export default function Certificates() {
             {/* Blockchain status info */}
             <div className="rounded-lg border border-border bg-secondary/50 p-3">
               <p className="text-xs text-muted-foreground">
-                {isVerified
-                  ? "El certificado será registrado en la red de verificación digital con su autorización institucional."
-                  : "El certificado será creado en la base de datos. Conecte su billetera institucional para registrarlo en la red de verificación."}
+                {dialogListsLoading
+                  ? "Cargando datos…"
+                  : isVerified
+                    ? "Se abrirá una previsualización del diploma. Requiere JWT de Pinata (VITE_PINATA_JWT) y autorización en su billetera institucional."
+                    : "El certificado será creado en la base de datos. Conecte su billetera institucional para registrarlo en la red de verificación."}
               </p>
             </div>
 
@@ -407,10 +620,17 @@ export default function Certificates() {
               <Button
                 type="submit"
                 className="bg-gradient-primary text-primary-foreground hover:opacity-90 gap-2"
-                disabled={alumnos.length === 0 || cursos.length === 0}
+                disabled={
+                  cursos.length === 0 ||
+                  dialogListsLoading ||
+                  !selectedCurso ||
+                  !selectedAlumno ||
+                  cursoEnrollments.length === 0 ||
+                  !canEmitCredential
+                }
               >
-                <Award className="h-4 w-4" />
-                Emitir Certificado
+                {dialogListsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Award className="h-4 w-4" />}
+                Emitir credencial
               </Button>
             </div>
           </form>
@@ -426,6 +646,21 @@ export default function Certificates() {
         result={mintState.result}
         error={mintState.error}
       />
+
+      <DiplomaCaptureHost ref={credentialCaptureRef} />
+
+      {credentialPreviewDiploma && (
+        <CredentialPreviewDialog
+          open={credentialPreviewOpen}
+          onOpenChange={(o) => {
+            setCredentialPreviewOpen(o);
+            if (!o && !credentialIssueSubmitting) setPendingCredentialIssue(null);
+          }}
+          diploma={credentialPreviewDiploma}
+          onConfirm={handleConfirmCredentialPreview}
+          loading={credentialIssueSubmitting}
+        />
+      )}
 
       {/* Delete Confirmation */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

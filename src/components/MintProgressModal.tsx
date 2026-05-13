@@ -1,6 +1,4 @@
-// CertiLink - Minting Progress Modal
-// Shows step-by-step progress during certificate issuance
-// Uses enterprise terminology - no crypto jargon
+// Progreso de emisión de credencial digital — terminología institucional
 
 import { useState } from "react";
 import {
@@ -35,19 +33,21 @@ interface MintProgressModalProps {
 }
 
 const STEPS: { key: MintStep; label: string }[] = [
-  { key: "creating_record", label: "Crear registro" },
-  { key: "preparing_wallet", label: "Preparar perfil digital" },
-  { key: "signing", label: "Autorización institucional" },
-  { key: "confirming", label: "Registro en red de verificación" },
-  { key: "storing", label: "Almacenar datos" },
+  { key: "creating_record", label: "Registro académico" },
+  { key: "generating_diploma", label: "Generando diploma" },
+  { key: "uploading_ipfs", label: "Subiendo a IPFS" },
+  { key: "registering_metadata", label: "Registrando metadata" },
+  { key: "blockchain_emission", label: "Emisión blockchain" },
+  { key: "final_confirmation", label: "Confirmación final" },
 ];
 
 const STEP_ORDER: MintStep[] = [
   "creating_record",
-  "preparing_wallet",
-  "signing",
-  "confirming",
-  "storing",
+  "generating_diploma",
+  "uploading_ipfs",
+  "registering_metadata",
+  "blockchain_emission",
+  "final_confirmation",
   "complete",
 ];
 
@@ -73,29 +73,33 @@ export function MintProgressModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o && (step === "complete" || step === "error")) onClose(); }}>
-      <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => {
-        if (step !== "complete" && step !== "error") e.preventDefault();
-      }}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o && (step === "complete" || step === "error")) onClose();
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-md"
+        onPointerDownOutside={(e) => {
+          if (step !== "complete" && step !== "error") e.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Award className="h-5 w-5 text-primary" />
-            Emisión de Certificado
+            Emisión verificada
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-5 py-2">
-          {/* Progress bar */}
           {step !== "complete" && step !== "error" && (
             <div className="space-y-2">
               <Progress value={progress} className="h-2" />
-              <p className="text-sm text-muted-foreground text-center">
-                {getStepLabel(step)}
-              </p>
+              <p className="text-sm text-muted-foreground text-center">{getStepLabel(step) || "Iniciando…"}</p>
             </div>
           )}
 
-          {/* Step indicators */}
           {step !== "complete" && step !== "error" && (
             <div className="space-y-2.5">
               {STEPS.map((s, idx) => {
@@ -105,13 +109,15 @@ export function MintProgressModal({
 
                 return (
                   <div key={s.key} className="flex items-center gap-3">
-                    <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
-                      isDone
-                        ? "bg-accent text-accent-foreground"
-                        : isActive
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-secondary text-muted-foreground"
-                    }`}>
+                    <div
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+                        isDone
+                          ? "bg-accent text-accent-foreground"
+                          : isActive
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-secondary text-muted-foreground"
+                      }`}
+                    >
                       {isDone ? (
                         <CheckCircle className="h-3.5 w-3.5" />
                       ) : isActive ? (
@@ -120,9 +126,15 @@ export function MintProgressModal({
                         <span className="text-[10px] font-bold">{idx + 1}</span>
                       )}
                     </div>
-                    <span className={`text-sm ${
-                      isActive ? "text-foreground font-medium" : isDone ? "text-muted-foreground" : "text-muted-foreground/60"
-                    }`}>
+                    <span
+                      className={`text-sm ${
+                        isActive
+                          ? "text-foreground font-medium"
+                          : isDone
+                            ? "text-muted-foreground"
+                            : "text-muted-foreground/60"
+                      }`}
+                    >
                       {s.label}
                     </span>
                   </div>
@@ -131,29 +143,24 @@ export function MintProgressModal({
             </div>
           )}
 
-          {/* Success state */}
           {step === "complete" && result && (
             <div className="space-y-4">
               <div className="flex flex-col items-center text-center py-2">
                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent-muted mb-3">
                   <CheckCircle className="h-7 w-7 text-accent" />
                 </div>
-                <h3 className="text-lg font-bold text-foreground">
-                  Certificado Emitido
-                </h3>
+                <h3 className="text-lg font-bold text-foreground">Credencial emitida</h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                  El certificado ha sido registrado exitosamente
+                  Diploma, documento PDF y registro blockchain quedaron vinculados a esta certificación.
                 </p>
               </div>
 
-              {/* Verification code */}
               <div className="rounded-lg border border-border bg-secondary/50 p-3">
                 <p className="text-xs text-muted-foreground mb-1.5">Código de verificación</p>
                 <div className="flex items-center justify-between">
-                  <code className="text-base font-bold font-mono text-foreground">
-                    {result.verificationCode}
-                  </code>
+                  <code className="text-base font-bold font-mono text-foreground">{result.verificationCode}</code>
                   <button
+                    type="button"
                     onClick={handleCopyCode}
                     className="rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
                   >
@@ -162,37 +169,34 @@ export function MintProgressModal({
                 </div>
               </div>
 
-              {/* On-chain details (subtle, non-crypto) */}
               <div className="rounded-lg border border-border p-3 space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">Registro digital</p>
                 <div className="text-[11px] text-muted-foreground space-y-1">
-                  <div className="flex justify-between">
-                    <span>ID de registro:</span>
-                    <span className="font-mono truncate ml-2 max-w-[180px]">{result.mintAddress.substring(0, 16)}...</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Perfil del estudiante:</span>
-                    <span className="font-mono truncate ml-2 max-w-[180px]">{result.studentWalletAddress.substring(0, 16)}...</span>
+                  <div className="flex justify-between gap-2">
+                    <span className="shrink-0">Credencial:</span>
+                    <span className="font-mono truncate text-right">{result.mintAddress}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Actions */}
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 gap-1.5 text-xs"
-                  asChild
-                >
+              <div className="flex flex-col gap-2">
+                <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs" asChild>
                   <a href={result.explorerUrl} target="_blank" rel="noopener noreferrer">
                     <ExternalLink className="h-3.5 w-3.5" />
-                    Ver registro
+                    Abrir transacción en explorador
                   </a>
                 </Button>
+                {result.explorerMintUrl && (
+                  <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs" asChild>
+                    <a href={result.explorerMintUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Ver credencial en explorador
+                    </a>
+                  </Button>
+                )}
                 <Button
                   size="sm"
-                  className="flex-1 bg-gradient-primary text-primary-foreground hover:opacity-90 text-xs"
+                  className="w-full bg-gradient-primary text-primary-foreground hover:opacity-90 text-xs"
                   onClick={onClose}
                 >
                   Cerrar
@@ -201,38 +205,25 @@ export function MintProgressModal({
             </div>
           )}
 
-          {/* Error state */}
           {step === "error" && (
             <div className="space-y-4">
               <div className="flex flex-col items-center text-center py-2">
                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10 mb-3">
                   <XCircle className="h-7 w-7 text-destructive" />
                 </div>
-                <h3 className="text-lg font-bold text-foreground">
-                  Error en la Emisión
-                </h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {error || "Ocurrió un error al emitir el certificado"}
+                <h3 className="text-lg font-bold text-foreground">No se pudo completar</h3>
+                <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-left text-sm text-muted-foreground">
+                  {error || "Ocurrió un error en la emisión verificada"}
                 </p>
               </div>
 
               <div className="flex gap-2">
                 {onRetry && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 text-xs"
-                    onClick={onRetry}
-                  >
+                  <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={onRetry}>
                     Reintentar
                   </Button>
                 )}
-                <Button
-                  size="sm"
-                  className="flex-1 text-xs"
-                  variant="outline"
-                  onClick={onClose}
-                >
+                <Button size="sm" className={`flex-1 text-xs ${onRetry ? "" : "w-full"}`} variant="outline" onClick={onClose}>
                   Cerrar
                 </Button>
               </div>

@@ -51,8 +51,8 @@ export function useCertificados() {
     setCertificados((prev) => prev.filter((c) => c.id !== id));
   };
 
-  const emitidosCount = certificados.filter((c) => c.estado === "emitido").length;
-  const pendientesCount = certificados.filter((c) => c.estado === "pendiente").length;
+  const emitidosCount = certificados.filter((c) => Boolean(c.tx_hash)).length;
+  const pendientesCount = certificados.filter((c) => !c.tx_hash).length;
 
   return {
     certificados,

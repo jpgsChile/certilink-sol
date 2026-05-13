@@ -1,28 +1,15 @@
-// CertiLink - Certificate NFT Minting Service
-// Uses Metaplex SDK to mint certificate NFTs on Solana Devnet
-// No custom programs, no Anchor - pure Metaplex
+// CertiLink — emisión de credencial digital on-chain (Metaplex, Solana Devnet)
 
 import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
 import { walletAdapterIdentity } from "@metaplex-foundation/umi-signer-wallet-adapters";
-import {
-  createNft,
-  mplTokenMetadata,
-} from "@metaplex-foundation/mpl-token-metadata";
-import {
-  generateSigner,
-  percentAmount,
-  publicKey as umiPublicKey,
-} from "@metaplex-foundation/umi";
+import { createNft, mplTokenMetadata } from "@metaplex-foundation/mpl-token-metadata";
+import { generateSigner, percentAmount, publicKey as umiPublicKey } from "@metaplex-foundation/umi";
 import type { WalletAdapter } from "@solana/wallet-adapter-base";
-import { SOLANA_RPC_URL, getExplorerUrl, CERTILINK_COLLECTION } from "./config";
-import {
-  buildCertificateMetadata,
-  metadataToDataUri,
-  type CertificateMetadata,
-} from "./metadata.service";
+import bs58 from "bs58";
+import { SOLANA_RPC_URL, getExplorerUrl, CERTILINK_COLLECTION, METAPLEX_TOKEN_METADATA_PROGRAM, SOLANA_REFERENCE_CHAIN_ID } from "./config";
 import { ensureStudentWallet } from "./wallet.service";
-import { supabase } from "@/lib/supabase";
 import { certificadosService } from "@/lib/services/certificados.service";
+import type { Json } from "@/lib/database.types";
 
 export interface MintResult {
   success: boolean;
@@ -30,6 +17,7 @@ export interface MintResult {
   mintAddress: string;
   metadataUri: string;
   explorerUrl: string;
+  explorerMintUrl: string;
   studentWalletAddress: string;
   verificationCode: string;
 }
@@ -37,47 +25,35 @@ export interface MintResult {
 export interface MintCertificateParams {
   certificadoId: string;
   alumnoId: string;
-  otecId: string;
   walletAdapter: WalletAdapter;
-  metadata: CertificateMetadata;
+  /** URI HTTPS del JSON de metadata en IPFS (o gateway). */
+  metadataUri: string;
+  /** Nombre del token Metaplex (≤32 caracteres). */
+  nftName: string;
+  verificationCode: string;
+  certificateHash: string;
+  ipfsMetadataUrl: string;
+  ipfsImageUrl: string | null;
+  ipfsPdfUrl: string | null;
 }
 
-/**
- * Complete certificate minting flow:
- * 1. Ensure student has a custodial wallet
- * 2. Build NFT metadata
- * 3. Create Metaplex UMI instance with OTEC wallet
- * 4. Mint NFT
- * 5. Store on-chain data in Supabase
- */
 export async function mintCertificateNFT(params: MintCertificateParams): Promise<MintResult> {
-  const { certificadoId, alumnoId, walletAdapter, metadata } = params;
+  const { certificadoId, alumnoId, walletAdapter, metadataUri, nftName } = params;
 
-  // Step 1: Ensure student has a wallet (transparent - student never sees this)
   const studentWallet = await ensureStudentWallet(alumnoId);
 
-  // Step 2: Build metadata with OTEC wallet as creator
-  const otecAddress = walletAdapter.publicKey?.toBase58() || "";
-  const fullMetadata = buildCertificateMetadata(metadata);
-  fullMetadata.properties.creators[0].address = otecAddress;
-  const metadataUri = metadataToDataUri(fullMetadata);
-
-  // Step 3: Create UMI instance with OTEC's connected wallet
   const umi = createUmi(SOLANA_RPC_URL)
     .use(mplTokenMetadata())
     .use(walletAdapterIdentity(walletAdapter));
 
-  // Step 4: Mint NFT
   const mintSigner = generateSigner(umi);
 
   const txBuilder = createNft(umi, {
     mint: mintSigner,
-    name: fullMetadata.name.substring(0, 32), // Metaplex name limit
+    name: nftName.slice(0, 32),
     symbol: CERTILINK_COLLECTION.symbol,
     uri: metadataUri,
     sellerFeeBasisPoints: percentAmount(0),
-    // The NFT is owned by the OTEC initially - can transfer to student later
-    // For demo: keeping it simple with OTEC as owner
     tokenOwner: umiPublicKey(studentWallet.publicKey),
     creators: [
       {
@@ -86,38 +62,60 @@ export async function mintCertificateNFT(params: MintCertificateParams): Promise
         share: 100,
       },
     ],
-    isMutable: false, // Certificates should be immutable
+    isMutable: false,
   });
 
   const result = await txBuilder.sendAndConfirm(umi, {
     confirm: { commitment: "confirmed" },
   });
 
-  // Step 5: Extract transaction hash
-  void Buffer.from(result.signature).toString("base64");
-  // For Solana explorer, we need the base58 signature
-  const bs58Sig = encodeTxSignature(result.signature);
+  let bs58Sig: string;
+  if (typeof result.signature === "string") {
+    bs58Sig = result.signature;
+  } else if (result.signature instanceof Uint8Array) {
+    bs58Sig = bs58.encode(result.signature);
+  } else if (Array.isArray(result.signature)) {
+    bs58Sig = bs58.encode(new Uint8Array(result.signature));
+  } else {
+    throw new Error("Respuesta de red inválida: firma de transacción no reconocida.");
+  }
   const mintAddress = mintSigner.publicKey.toString();
   const explorerUrl = getExplorerUrl("tx", bs58Sig);
+  const explorerMintUrl = getExplorerUrl("address", mintAddress);
+  const verificationCode = certificadosService.hashToCode(params.certificateHash);
 
-  // Step 6: Store on-chain data in Supabase
-  const { error: updateError } = await supabase
-    .from("certificados")
-    .update({
+  const metadataJson: Json = {
+    explorer_url: explorerUrl,
+    explorer_mint_url: explorerMintUrl,
+    verification_code: verificationCode,
+    uri_kind: "ipfs",
+    ipfs_metadata_url: params.ipfsMetadataUrl,
+    ipfs_image_url: params.ipfsImageUrl,
+    ipfs_pdf_url: params.ipfsPdfUrl,
+  };
+
+  try {
+    await certificadosService.updateBlockchainFields(certificadoId, {
       tx_hash: bs58Sig,
-      mint_address: mintAddress,
-      metadata_uri: metadataUri,
-      explorer_url: explorerUrl,
+      token_id: mintAddress,
+      contract_address: METAPLEX_TOKEN_METADATA_PROGRAM,
+      chain_id: SOLANA_REFERENCE_CHAIN_ID,
+      ipfs_metadata_url: params.ipfsMetadataUrl,
+      ipfs_image_url: params.ipfsImageUrl,
+      ipfs_pdf_url: params.ipfsPdfUrl,
+      nft_status: "minted",
+      nft_issued_at: new Date().toISOString(),
       estado: "emitido",
-    })
-    .eq("id", certificadoId);
-
-  if (updateError) {
-    console.error("Error storing on-chain data:", updateError);
-    // Don't throw - the NFT was minted successfully
+      metadata: metadataJson,
+      last_blockchain_error: null,
+    });
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    console.error("Error al persistir datos on-chain:", e);
+    throw new Error(
+      `La credencial se registró en Solana, pero no se pudo guardar el comprobante en el sistema (${detail}). Contacte soporte con el identificador del certificado.`
+    );
   }
-
-  const verificationCode = certificadosService.hashToCode(metadata.certificateHash);
 
   return {
     success: true,
@@ -125,33 +123,8 @@ export async function mintCertificateNFT(params: MintCertificateParams): Promise
     mintAddress,
     metadataUri,
     explorerUrl,
+    explorerMintUrl,
     studentWalletAddress: studentWallet.publicKey,
     verificationCode,
   };
-}
-
-/**
- * Encode a Uint8Array transaction signature to base58 for explorer URLs
- */
-function encodeTxSignature(signature: Uint8Array): string {
-  const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  let num = BigInt(0);
-  for (const byte of signature) {
-    num = num * 256n + BigInt(byte);
-  }
-  let encoded = "";
-  while (num > 0n) {
-    const remainder = Number(num % 58n);
-    num = num / 58n;
-    encoded = ALPHABET[remainder] + encoded;
-  }
-  // Handle leading zeros
-  for (const byte of signature) {
-    if (byte === 0) {
-      encoded = "1" + encoded;
-    } else {
-      break;
-    }
-  }
-  return encoded;
 }

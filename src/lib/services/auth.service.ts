@@ -1,5 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import type { Otec } from "@/lib/database.types";
+import type { CertilinkAuthUser } from "@/lib/database.types";
+
+const SESSION_KEY = "certilink.otec.session.v1";
 
 export interface SignUpPayload {
   email: string;
@@ -12,63 +15,116 @@ export interface SignInPayload {
   password: string;
 }
 
+export interface OtecAuthResult {
+  user: CertilinkAuthUser;
+  otec: Otec;
+}
+
+function parseOtec(raw: unknown): Otec | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const id = o.id != null ? String(o.id) : "";
+  const email = o.email != null ? String(o.email) : "";
+  if (!id || !email) return null;
+  return { ...(o as object), id, email } as Otec;
+}
+
+export function readPersistedOtec(): Otec | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    return parseOtec(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/** Persiste la fila OTEC en sessionStorage (sesión institucional). */
+export function writeOtecSession(otec: Otec) {
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(otec));
+}
+
+function persistOtec(otec: Otec) {
+  writeOtecSession(otec);
+}
+
+function clearPersistedOtec() {
+  sessionStorage.removeItem(SESSION_KEY);
+}
+
+function rpcOtecRows(data: unknown): Otec[] {
+  if (data == null) return [];
+  if (Array.isArray(data)) return data.map((r) => parseOtec(r)).filter(Boolean) as Otec[];
+  const one = parseOtec(data);
+  return one ? [one] : [];
+}
+
 export const authService = {
-  /** Sign up a new user and create their OTEC record */
-  async signUp({ email, password, institucion }: SignUpPayload) {
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
+  readPersistedOtec,
+
+  /** Registro vía RPC (hash bcrypt en servidor). */
+  async signUp({ email, password, institucion }: SignUpPayload): Promise<OtecAuthResult> {
+    const { data, error } = await supabase.rpc("certilink_otec_register", {
+      p_nombre: institucion.trim(),
+      p_email: email.trim(),
+      p_password: password,
+      p_rut: null,
+      p_direccion: null,
+      p_telefono: null,
     });
 
-    if (authError) throw authError;
-    if (!authData.user) throw new Error("No se pudo crear el usuario");
-
-    // Create the OTEC record
-    const { error: otecError } = await supabase.from("otecs").insert({
-      user_id: authData.user.id,
-      nombre: institucion,
-    });
-
-    if (otecError) throw otecError;
-
-    return authData;
-  },
-
-  /** Sign in with email and password */
-  async signIn({ email, password }: SignInPayload) {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
     if (error) throw error;
-    return data;
+    const rows = rpcOtecRows(data);
+    const otec = rows[0];
+    if (!otec) throw new Error("No se pudo crear la institución");
+
+    persistOtec(otec);
+    return {
+      user: { id: otec.id, email: otec.email },
+      otec,
+    };
   },
 
-  /** Sign out */
+  /** Login vía RPC (compara password con password_hash en BD). */
+  async signIn({ email, password }: SignInPayload): Promise<OtecAuthResult> {
+    const { data, error } = await supabase.rpc("certilink_otec_login", {
+      p_email: email.trim(),
+      p_password: password.trim(),
+    });
+
+    if (error) throw error;
+    const rows = rpcOtecRows(data);
+    const otec = rows[0];
+    if (!otec) throw new Error("Credenciales incorrectas");
+
+    persistOtec(otec);
+    return {
+      user: { id: otec.id, email: otec.email },
+      otec,
+    };
+  },
+
   async signOut() {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    clearPersistedOtec();
+    await supabase.auth.signOut();
   },
 
-  /** Get current session */
+  /** Compatibilidad: ya no hay sesión JWT de Supabase Auth para OTEC. */
   async getSession() {
-    const { data, error } = await supabase.auth.getSession();
-    if (error) throw error;
-    return data.session;
+    return null;
   },
 
-  /** Get current user's OTEC record */
+  /** Fila OTEC persistida en sesión del navegador. */
   async getOtec(): Promise<Otec | null> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
+    return readPersistedOtec();
+  },
 
-    const { data, error } = await supabase
-      .from("otecs")
-      .select("*")
-      .eq("user_id", user.id)
-      .single();
-
-    if (error) return null;
-    return data;
+  /** Refresca desde la BD (requiere políticas RLS que permitan lectura con anon o ajuste en servidor). */
+  async fetchOtecById(id: string): Promise<Otec | null> {
+    const { data, error } = await supabase.from("otec").select("*").eq("id", id).maybeSingle();
+    if (error || !data) return readPersistedOtec();
+    const row = data as Otec;
+    writeOtecSession(row);
+    return row;
   },
 };

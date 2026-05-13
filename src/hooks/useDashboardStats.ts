@@ -36,7 +36,7 @@ export function useDashboardStats() {
         alumnosService.count(otec.id),
         cursosService.count(otec.id),
         certificadosService.count(otec.id),
-        certificadosService.count(otec.id, "emitido"),
+        certificadosService.countWithBlockchainTx(otec.id),
         certificadosService.getAll(otec.id),
       ]);
       setStats({

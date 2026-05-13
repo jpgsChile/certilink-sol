@@ -1,36 +1,80 @@
-
-
 import { supabase } from "@/lib/supabase";
+import { getExplorerUrl } from "@/lib/solana/config";
 import type {
+  Certificado,
   CertificadoInsert,
   CertificadoUpdate,
   CertificadoConDetalles,
 } from "@/lib/database.types";
 
-/** Generate a SHA-256 hash for a certificate */
+const CERT_SELECT = `
+  *,
+  alumnos ( nombre, apellido, rut ),
+  cursos ( nombre, codigo, horas ),
+  otec ( nombre )
+`;
+
 async function generateHash(alumnoId: string, cursoId: string, fecha: string): Promise<string> {
-  const payload = `${alumnoId}:${cursoId}:${fecha}:${Date.now()}`;
+  const payload = `${alumnoId}:${cursoId}:${fecha}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
   const encoded = new TextEncoder().encode(payload);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+  try {
+    if (typeof crypto !== "undefined" && crypto.subtle?.digest) {
+      const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+    }
+  } catch {
+    /* entornos sin subtle o digest fallido — fallback abajo */
+  }
+
+  const buf = new Uint8Array(32);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    crypto.getRandomValues(buf);
+  } else {
+    for (let i = 0; i < buf.length; i += 1) buf[i] = Math.floor(Math.random() * 256);
+  }
+  return Array.from(buf).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Create a short verification code from a hash (first 10 chars, uppercase) */
 function hashToCode(hash: string): string {
   return `CL-${hash.substring(0, 6).toUpperCase()}`;
 }
 
+/** Explorer Solana a partir de `tx_hash` guardado en certificados. */
+export function certificadoExplorerUrl(txHash: string | null | undefined): string | null {
+  if (!txHash) return null;
+  return getExplorerUrl("tx", txHash);
+}
+
+/** Mint / token mint address en esquema actual (`token_id`). */
+export function certificadoMintDisplay(cert: Pick<Certificado, "token_id">): string | null {
+  return cert.token_id ?? null;
+}
+
+/** URL de explorador: prioriza metadata guardada en mint, si no, tx. */
+export function certificadoPublicExplorer(cert: Certificado): string | null {
+  if (cert.metadata && typeof cert.metadata === "object" && !Array.isArray(cert.metadata)) {
+    const m = cert.metadata as Record<string, unknown>;
+    if (typeof m.explorer_url === "string") return m.explorer_url;
+  }
+  return certificadoExplorerUrl(cert.tx_hash);
+}
+
+export function certificadoExplorerMintUrl(cert: Certificado): string | null {
+  if (cert.metadata && typeof cert.metadata === "object" && !Array.isArray(cert.metadata)) {
+    const m = cert.metadata as Record<string, unknown>;
+    if (typeof m.explorer_mint_url === "string") return m.explorer_mint_url;
+  }
+  const mint = certificadoMintDisplay(cert);
+  return mint ? getExplorerUrl("address", mint) : null;
+}
+
 export const certificadosService = {
-  /** Fetch all certificates for the current OTEC with student/course details */
   async getAll(otecId: string): Promise<CertificadoConDetalles[]> {
     const { data, error } = await supabase
       .from("certificados")
-      .select(`
-        *,
-        alumnos ( nombre, apellido, rut ),
-        cursos ( nombre, codigo, horas )
-      `)
+      .select(CERT_SELECT)
       .eq("otec_id", otecId)
       .order("created_at", { ascending: false });
 
@@ -38,7 +82,6 @@ export const certificadosService = {
     return (data ?? []) as CertificadoConDetalles[];
   },
 
-  /** Issue a new certificate */
   async create(
     otecId: string,
     alumnoId: string,
@@ -49,49 +92,44 @@ export const certificadosService = {
     const hash = await generateHash(alumnoId, cursoId, fecha);
 
     const insert: CertificadoInsert = {
+      otec_id: otecId,
       alumno_id: alumnoId,
       curso_id: cursoId,
-      otec_id: otecId,
       hash_sha256: hash,
       fecha_emision: fecha,
+      fecha_fin: null,
+      nota: null,
       estado: "emitido",
     };
 
     const { data, error } = await supabase
       .from("certificados")
       .insert(insert)
-      .select(`
-        *,
-        alumnos ( nombre, apellido, rut ),
-        cursos ( nombre, codigo, horas )
-      `)
+      .select(CERT_SELECT)
       .single();
 
     if (error) throw error;
     return data as CertificadoConDetalles;
   },
 
-  /** Update certificate status */
   async updateStatus(id: string, estado: CertificadoUpdate["estado"]): Promise<void> {
-    const { error } = await supabase
-      .from("certificados")
-      .update({ estado })
-      .eq("id", id);
+    const { error } = await supabase.from("certificados").update({ estado }).eq("id", id);
 
     if (error) throw error;
   },
 
-  /** Delete a certificate */
+  /** Actualiza campos de registro digital / IPFS / blockchain (emisión credencial). */
+  async updateBlockchainFields(id: string, patch: CertificadoUpdate): Promise<void> {
+    const { error } = await supabase.from("certificados").update(patch).eq("id", id);
+    if (error) throw error;
+  },
+
   async remove(id: string): Promise<void> {
-    const { error } = await supabase
-      .from("certificados")
-      .delete()
-      .eq("id", id);
+    const { error } = await supabase.from("certificados").delete().eq("id", id);
 
     if (error) throw error;
   },
 
-  /** Count certificates for dashboard (optionally by estado) */
   async count(otecId: string, estado?: string): Promise<number> {
     let query = supabase
       .from("certificados")
@@ -107,16 +145,22 @@ export const certificadosService = {
     return count ?? 0;
   },
 
-  /** Public verification - look up certificate by hash */
+  /** Certificados con transacción on-chain registrada (`tx_hash`). */
+  async countWithBlockchainTx(otecId: string): Promise<number> {
+    const { count, error } = await supabase
+      .from("certificados")
+      .select("*", { count: "exact", head: true })
+      .eq("otec_id", otecId)
+      .not("tx_hash", "is", null);
+
+    if (error) throw error;
+    return count ?? 0;
+  },
+
   async verifyByHash(hash: string): Promise<CertificadoConDetalles | null> {
     const { data, error } = await supabase
       .from("certificados")
-      .select(`
-        *,
-        alumnos ( nombre, apellido, rut ),
-        cursos ( nombre, codigo, horas ),
-        otecs ( nombre )
-      `)
+      .select(CERT_SELECT)
       .eq("hash_sha256", hash)
       .maybeSingle();
 
@@ -124,27 +168,22 @@ export const certificadosService = {
     return data as CertificadoConDetalles | null;
   },
 
-  /** Public verification - search by short code (CL-XXXXXX) */
   async verifyByCode(code: string): Promise<CertificadoConDetalles | null> {
-    // Extract the 6-char hex from the code pattern CL-XXXXXX
-    const cleanCode = code.replace("CL-", "").toLowerCase();
+    const cleanCode = code.replace(/^CL-/i, "").trim().toLowerCase();
+    if (cleanCode.length < 6) return null;
 
     const { data, error } = await supabase
       .from("certificados")
-      .select(`
-        *,
-        alumnos ( nombre, apellido, rut ),
-        cursos ( nombre, codigo, horas ),
-        otecs ( nombre )
-      `)
+      .select(CERT_SELECT)
       .ilike("hash_sha256", `${cleanCode}%`)
       .eq("estado", "emitido")
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (error) throw error;
     return data as CertificadoConDetalles | null;
   },
 
-  /** Helper: convert hash to display code */
   hashToCode,
 };

@@ -52,7 +52,7 @@ export default function Dashboard() {
         </div>
         <div className="animate-fade-in-delay-2">
           <StatCard
-            label="Certificados Emitidos"
+            label="Con registro en cadena"
             value={stats.emitidosCount.toLocaleString("es-CL")}
             icon={Award}
             iconColor="bg-warning-muted"
@@ -60,7 +60,7 @@ export default function Dashboard() {
         </div>
         <div className="animate-fade-in-delay-3">
           <StatCard
-            label="Tasa de Emisión"
+            label="% certificados on-chain"
             value={`${verificationRate}%`}
             icon={TrendingUp}
             iconColor="bg-primary-muted"
@@ -116,11 +116,9 @@ export default function Dashboard() {
                   </div>
                   <div className="text-right">
                     <span
-                      className={
-                        cert.estado === "emitido" ? "badge-success" : "badge-warning"
-                      }
+                      className={cert.tx_hash ? "badge-success" : "badge-warning"}
                     >
-                      {cert.estado === "emitido" ? "Emitido" : "Pendiente"}
+                      {cert.tx_hash ? "En cadena" : "Solo registro"}
                     </span>
                     <p className="mt-1 text-[11px] text-muted-foreground font-mono">
                       {certificadosService.hashToCode(cert.hash_sha256)}

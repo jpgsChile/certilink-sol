@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { getAuthErrorMessage } from "@/lib/auth-errors";
 
 export default function Register() {
   const [form, setForm] = useState({
@@ -33,13 +34,16 @@ export default function Register() {
     try {
       await signUp(form.email, form.password, form.institucion);
       toast({
-        title: "Cuenta creada",
-        description: "Revise su correo para confirmar su cuenta. Luego podrá iniciar sesión.",
+        title: "Institución registrada",
+        description: "Su cuenta OTEC está lista. Ya puede usar el panel.",
       });
-      navigate("/login");
+      navigate("/dashboard");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Error al crear la cuenta";
-      toast({ title: "Error de registro", description: msg, variant: "destructive" });
+      toast({
+        title: "Error de registro",
+        description: getAuthErrorMessage(err),
+        variant: "destructive",
+      });
     } finally {
       setSubmitting(false);
     }

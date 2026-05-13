@@ -7,6 +7,13 @@ export const SOLANA_NETWORK = "devnet" as const;
 export const SOLANA_RPC_URL = clusterApiUrl("devnet");
 export const SOLANA_EXPLORER_BASE = "https://explorer.solana.com";
 
+/** Identificador de referencia para integraciones (no es chainId EVM). Devnet: 103, mainnet-beta: 101. */
+export const SOLANA_REFERENCE_CHAIN_ID = 103;
+
+/** Programa Metaplex Token Metadata (registro de credencial on-chain). */
+export const METAPLEX_TOKEN_METADATA_PROGRAM =
+  "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
+
 /** Build a Solana Explorer URL for a given address/tx */
 export function getExplorerUrl(type: "tx" | "address" | "token", value: string): string {
   return `${SOLANA_EXPLORER_BASE}/${type}/${value}?cluster=${SOLANA_NETWORK}`;

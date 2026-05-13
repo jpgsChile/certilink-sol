@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { getAuthErrorMessage } from "@/lib/auth-errors";
 
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
@@ -25,8 +26,11 @@ export default function Login() {
       toast({ title: "Sesión iniciada", description: "Bienvenido a CertiLink" });
       navigate("/dashboard");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Error al iniciar sesión";
-      toast({ title: "Error de autenticación", description: msg, variant: "destructive" });
+      toast({
+        title: "Error de autenticación",
+        description: getAuthErrorMessage(err),
+        variant: "destructive",
+      });
     } finally {
       setSubmitting(false);
     }

@@ -1,90 +1,98 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
-import { authService } from "@/lib/services/auth.service";
-import type { User, Session } from "@supabase/supabase-js";
-import type { Otec } from "@/lib/database.types";
+import { authService, readPersistedOtec, writeOtecSession } from "@/lib/services/auth.service";
+import type { CertilinkAuthUser, Otec } from "@/lib/database.types";
+
+function userFromOtec(o: Otec | null): CertilinkAuthUser | null {
+  if (!o) return null;
+  return { id: o.id, email: o.email };
+}
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
+  user: CertilinkAuthUser | null;
+  session: null;
   otec: Otec | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, institucion: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshOtec: () => Promise<void>;
+  /** Actualiza estado y sessionStorage sin re-fetch (útil si RLS bloquea SELECT). */
+  patchOtec: (partial: Partial<Otec>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [otec, setOtec] = useState<Otec | null>(null);
+  const [otec, setOtec] = useState<Otec | null>(() => readPersistedOtec());
+  const [user, setUser] = useState<CertilinkAuthUser | null>(() => userFromOtec(readPersistedOtec()));
   const [loading, setLoading] = useState(true);
 
-  const fetchOtec = useCallback(async () => {
-    try {
-      const otecData = await authService.getOtec();
-      setOtec(otecData);
-    } catch {
+  useEffect(() => {
+    setLoading(false);
+  }, []);
+
+  const refreshOtec = useCallback(async () => {
+    const stored = readPersistedOtec();
+    if (!stored?.id) {
       setOtec(null);
+      setUser(null);
+      return;
+    }
+    try {
+      const fresh = await authService.fetchOtecById(stored.id);
+      if (fresh) {
+        setOtec(fresh);
+        setUser(userFromOtec(fresh));
+      } else {
+        setOtec(stored);
+        setUser(userFromOtec(stored));
+      }
+    } catch {
+      setOtec(stored);
+      setUser(userFromOtec(stored));
     }
   }, []);
 
-  useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      if (s?.user) {
-        fetchOtec().finally(() => setLoading(false));
-      } else {
-        setLoading(false);
-      }
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, s) => {
-        setSession(s);
-        setUser(s?.user ?? null);
-        if (s?.user) {
-          await fetchOtec();
-        } else {
-          setOtec(null);
-        }
-      }
-    );
-
-    return () => subscription.unsubscribe();
-  }, [fetchOtec]);
-
   const signIn = async (email: string, password: string) => {
-    const data = await authService.signIn({ email, password });
-    setUser(data.user);
-    setSession(data.session);
-    await fetchOtec();
+    const { user: u, otec: o } = await authService.signIn({ email, password });
+    setUser(u);
+    setOtec(o);
   };
 
   const signUp = async (email: string, password: string, institucion: string) => {
-    await authService.signUp({ email, password, institucion });
+    const { user: u, otec: o } = await authService.signUp({ email, password, institucion });
+    setUser(u);
+    setOtec(o);
   };
 
   const signOut = async () => {
     await authService.signOut();
     setUser(null);
-    setSession(null);
     setOtec(null);
   };
 
-  const refreshOtec = async () => {
-    await fetchOtec();
-  };
+  const patchOtec = useCallback((partial: Partial<Otec>) => {
+    setOtec((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...partial } as Otec;
+      writeOtecSession(next);
+      return next;
+    });
+  }, []);
 
   return (
     <AuthContext.Provider
-      value={{ user, session, otec, loading, signIn, signUp, signOut, refreshOtec }}
+      value={{
+        user,
+        session: null,
+        otec,
+        loading,
+        signIn,
+        signUp,
+        signOut,
+        refreshOtec,
+        patchOtec,
+      }}
     >
       {children}
     </AuthContext.Provider>

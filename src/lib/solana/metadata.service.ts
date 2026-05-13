@@ -72,3 +72,63 @@ export interface CertificateMetadata {
       return null;
     }
   }
+
+const CERT_SYMBOL = "CERT";
+
+/** Nombre on-chain Metaplex (máx. 32 caracteres visibles). */
+export function buildCredentialNftOnchainName(verificationCode: string, courseName: string): string {
+  const base = `${verificationCode} · ${courseName}`;
+  if (base.length <= 32) return base;
+  return `${verificationCode} · ${courseName.slice(0, Math.max(0, 32 - verificationCode.length - 3))}…`.slice(0, 32);
+}
+
+export interface VerifiedCredentialNftInput extends CertificateMetadata {
+  imageGatewayUrl: string;
+  pdfGatewayUrl: string;
+  externalUrl: string;
+  /** Wallet institucional (creador verificado en cadena). */
+  institutionWalletAddress: string;
+}
+
+/**
+ * JSON compatible con Metaplex Token Metadata para credencial académica verificada
+ * (subido a IPFS como `uri` del registro digital).
+ */
+export function buildVerifiedCredentialNftJson(data: VerifiedCredentialNftInput) {
+  const desc =
+    `Credencial digital académica verificada emitida por ${data.institutionName} para ${data.studentName}. ` +
+    `Certificación: ${data.courseName} (${data.courseHours} horas). ` +
+    `Fecha de emisión: ${data.issueDate}. Código de verificación: ${data.verificationCode}. ` +
+    `Representa un logro educativo verificable, no un activo especulativo.`;
+
+  return {
+    name: buildCredentialNftOnchainName(data.verificationCode, data.courseName),
+    symbol: CERT_SYMBOL,
+    description: desc,
+    image: data.imageGatewayUrl,
+    external_url: data.externalUrl,
+    attributes: [
+      { trait_type: "Institución", value: data.institutionName },
+      { trait_type: "Curso", value: data.courseName },
+      { trait_type: "Horas", value: String(data.courseHours) },
+      { trait_type: "Fecha emisión", value: data.issueDate },
+      { trait_type: "Código verificación", value: data.verificationCode },
+      { trait_type: "Estado", value: "Emitido verificado" },
+      { trait_type: "Blockchain", value: "Solana (registro inmutable)" },
+      ...(data.studentRut ? [{ trait_type: "RUT", value: data.studentRut }] : []),
+    ],
+    properties: {
+      category: "image",
+      files: [
+        { uri: data.imageGatewayUrl, type: "image/png" },
+        { uri: data.pdfGatewayUrl, type: "application/pdf" },
+      ],
+      creators: [
+        {
+          address: data.institutionWalletAddress,
+          share: 100,
+        },
+      ],
+    },
+  };
+}

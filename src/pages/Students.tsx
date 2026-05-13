@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -187,8 +188,8 @@ export default function Students() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader className="space-y-1 pr-2">
             <DialogTitle>{editingAlumno ? "Editar Estudiante" : "Nuevo Estudiante"}</DialogTitle>
             <DialogDescription>
               {editingAlumno
@@ -196,8 +197,8 @@ export default function Students() {
                 : "Complete los datos para inscribir un nuevo estudiante"}
             </DialogDescription>
           </DialogHeader>
-          <form className="space-y-4 mt-2" onSubmit={handleSubmit}>
-            <div className="grid grid-cols-2 gap-4">
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Nombre</Label>
                 <Input
@@ -254,7 +255,7 @@ export default function Students() {
                 disabled={submitting}
               />
             </div>
-            <div className="flex justify-end gap-2 pt-2">
+            <DialogFooter className="gap-2 pt-2 sm:gap-2">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>
                 Cancelar
               </Button>
@@ -267,7 +268,7 @@ export default function Students() {
                   "Guardar"
                 )}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

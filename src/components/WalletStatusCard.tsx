@@ -3,6 +3,7 @@
 // No crypto jargon - presented as "Autorización Institucional"
 
 import { ShieldCheck, Wallet, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { Button } from "@/components/ui/button";
@@ -13,8 +14,11 @@ export function WalletStatusCard() {
   const { isRegistered, savedAddress, isConnected, connectedAddress, isVerified, loading, registerWallet } = useOtecWallet();
   const { connected } = useWallet();
   const { toast } = useToast();
+  const [registering, setRegistering] = useState(false);
 
   const handleRegister = async () => {
+    if (registering) return;
+    setRegistering(true);
     try {
       await registerWallet();
       toast({
@@ -23,7 +27,14 @@ export function WalletStatusCard() {
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Error al registrar";
-      toast({ title: "Error", description: msg, variant: "destructive" });
+      toast({
+        title: "No se pudo vincular la billetera",
+        description: msg,
+        variant: "destructive",
+        duration: 12_000,
+      });
+    } finally {
+      setRegistering(false);
     }
   };
 
@@ -80,8 +91,10 @@ export function WalletStatusCard() {
           <Button
             onClick={handleRegister}
             size="sm"
-            className="w-full bg-gradient-primary text-primary-foreground hover:opacity-90 text-xs"
+            disabled={registering}
+            className="w-full bg-gradient-primary text-primary-foreground hover:opacity-90 text-xs gap-2"
           >
+            {registering ? <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" /> : null}
             Registrar como billetera institucional
           </Button>
         </div>
