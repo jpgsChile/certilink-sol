@@ -57,8 +57,7 @@ create index if not exists certificados_owner_student_wallet_id_idx
   on public.certificados (owner_student_wallet_id)
   where owner_student_wallet_id is not null;
 
--- RLS opcional: mismo patrón que curso_alumnos cuando exista otec.user_id = auth.uid()
--- alter table public.student_wallets enable row level security;
-
 grant select, insert, update, delete on public.student_wallets to anon, authenticated;
 grant select, insert, update, delete on public.student_wallets to service_role;
+
+alter table public.student_wallets disable row level security;

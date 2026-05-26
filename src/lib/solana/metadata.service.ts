@@ -100,11 +100,49 @@ export function decodeMetadataUri(uri: string): ReturnType<typeof buildCertifica
 
 const CERT_SYMBOL = "CERT";
 
-/** Nombre on-chain Metaplex (máx. 32 caracteres visibles). */
+/** Límites on-chain Metaplex Token Metadata (bytes UTF-8). */
+export const METAPLEX_MAX_NAME_BYTES = 32;
+export const METAPLEX_MAX_SYMBOL_BYTES = 10;
+export const METAPLEX_MAX_URI_BYTES = 200;
+
+/** Trunca por bytes UTF-8 sin partir caracteres multibyte. */
+export function truncateMetaplexOnchainField(value: string, maxBytes: number): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const bytes = new TextEncoder().encode(trimmed);
+  if (bytes.length <= maxBytes) return trimmed;
+  let end = maxBytes;
+  while (end > 0 && (bytes[end] & 0xc0) === 0x80) end -= 1;
+  return new TextDecoder().decode(bytes.slice(0, end));
+}
+
+/** URI on-chain (máx. 200 bytes). Usa `ipfs://CID` cuando la gateway Pinata es larga. */
+export function compactMetaplexMetadataUri(uri: string): string {
+  const trimmed = uri.trim();
+  const cidMatch = trimmed.match(/\/ipfs\/([^/?#]+)/i);
+  if (cidMatch?.[1]) {
+    const short = `ipfs://${cidMatch[1]}`;
+    if (new TextEncoder().encode(short).length <= METAPLEX_MAX_URI_BYTES) return short;
+  }
+  return truncateMetaplexOnchainField(trimmed, METAPLEX_MAX_URI_BYTES);
+}
+
+/** Nombre on-chain Metaplex (máx. 32 bytes UTF-8). Curso completo queda en metadata IPFS. */
 export function buildCredentialNftOnchainName(verificationCode: string, courseName: string): string {
-  const base = `${verificationCode} · ${courseName}`;
-  if (base.length <= 32) return base;
-  return `${verificationCode} · ${courseName.slice(0, Math.max(0, 32 - verificationCode.length - 3))}…`.slice(0, 32);
+  const code = truncateMetaplexOnchainField(verificationCode.trim() || "CERT", METAPLEX_MAX_NAME_BYTES);
+  const asciiCourse = courseName
+    .trim()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/\s+/g, " ");
+  if (!asciiCourse) return code;
+  const combined = `${code} ${asciiCourse}`;
+  return truncateMetaplexOnchainField(combined, METAPLEX_MAX_NAME_BYTES) || code;
+}
+
+export function buildCredentialNftOnchainSymbol(): string {
+  return truncateMetaplexOnchainField(CERT_SYMBOL, METAPLEX_MAX_SYMBOL_BYTES);
 }
 
 export interface VerifiedCredentialNftInput extends CertificateMetadata {

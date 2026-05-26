@@ -1,6 +1,6 @@
 -- CertiLink — columnas de registro digital / blockchain en certificados
 -- Ejecutar en Supabase SQL Editor después de public.certificados.
--- Orden sugerido: 016 → 017 → 018 → 019
+-- Orden sugerido: 016 → 017 → 018 → 019 → 020 (si nft_status era enum legacy)
 
 alter table public.certificados
   add column if not exists ipfs_metadata_url text,

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { formatSupabaseUserError, throwSupabaseError } from "@/lib/supabase-error";
 import { getExplorerUrl } from "@/lib/solana/config";
 import type {
   Certificado,
@@ -238,7 +239,73 @@ export const certificadosService = {
   /** Actualiza campos de registro digital / IPFS / blockchain (emisión credencial). */
   async updateBlockchainFields(id: string, patch: CertificadoUpdate): Promise<void> {
     const { error } = await supabase.from("certificados").update(patch).eq("id", id);
-    if (error) throw error;
+    throwSupabaseError(error, "Error al actualizar registro blockchain");
+  },
+
+  /**
+   * Tras mint exitoso en Solana: persiste comprobante con reintentos (enum legacy, patch mínimo con tx_hash).
+   */
+  async persistMintComprobante(certificadoId: string, patch: CertificadoUpdate): Promise<void> {
+    const legacyNftStatus: Record<string, string> = {
+      minted: "MINTED",
+      pending_onchain: "PENDIENTE",
+      retrying: "PENDIENTE",
+      mint_failed: "FALLIDO",
+    };
+
+    try {
+      await this.updateBlockchainFields(certificadoId, patch);
+      return;
+    } catch (first) {
+      const msg = first instanceof Error ? first.message : formatSupabaseUserError(first);
+      if (msg.includes("value too long") || msg.includes("22001") || msg.includes("character varying(42)")) {
+        throw new Error(
+          `${msg}. Las columnas blockchain del certificado son demasiado cortas para Solana. ` +
+            `Ejecute supabase/sql/023_certificados_solana_field_lengths.sql en Supabase y recargue el esquema. ` +
+            `Certificado: ${certificadoId}. Transacción (ya en Solana): ${patch.tx_hash ?? "—"}.`
+        );
+      }
+      const status = patch.nft_status;
+      if (
+        status &&
+        typeof status === "string" &&
+        msg.toLowerCase().includes("certificado_nft_status") &&
+        legacyNftStatus[status]
+      ) {
+        try {
+          await this.updateBlockchainFields(certificadoId, {
+            ...patch,
+            nft_status: legacyNftStatus[status],
+          });
+          return;
+        } catch {
+          /* intentar patch mínimo */
+        }
+      }
+
+      const minimal: CertificadoUpdate = {
+        tx_hash: patch.tx_hash,
+        token_id: patch.token_id,
+        contract_address: patch.contract_address,
+        chain_id: patch.chain_id,
+        ipfs_metadata_url: patch.ipfs_metadata_url,
+        ipfs_image_url: patch.ipfs_image_url,
+        ipfs_pdf_url: patch.ipfs_pdf_url,
+        metadata: patch.metadata,
+        estado: patch.estado ?? "emitido",
+      };
+
+      try {
+        await this.updateBlockchainFields(certificadoId, minimal);
+        console.warn("Comprobante mint guardado (patch mínimo). Detalle previo:", msg);
+        return;
+      } catch {
+        throw new Error(
+          `La credencial se registró en Solana, pero no se pudo guardar el comprobante en el sistema (${msg}). ` +
+            `Identificador del certificado: ${certificadoId}. Transacción: ${patch.tx_hash ?? "—"}.`
+        );
+      }
+    }
   },
 
   async remove(id: string): Promise<void> {

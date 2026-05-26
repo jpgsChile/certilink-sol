@@ -26,6 +26,14 @@ export const studentWalletsService = {
     const { data, error } = await supabase.from("student_wallets").insert(row).select("*").single();
 
     if (error) {
+      if (error.code === "42501" || error.message?.includes("row-level security")) {
+        throw new Error(
+          formatError(
+            "Error al crear billetera académica (permisos RLS en student_wallets). Ejecute supabase/sql/021_student_wallets_disable_rls.sql en Supabase",
+            error
+          )
+        );
+      }
       if (error.code === "23505") {
         const existing = await getActiveByAlumno(row.alumno_id, row.network as StudentWalletNetwork);
         if (existing) return existing;

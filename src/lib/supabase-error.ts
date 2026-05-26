@@ -28,3 +28,13 @@ export function formatSupabaseUserError(err: unknown): string {
     return "Error desconocido";
   }
 }
+
+/** Convierte error PostgREST de supabase-js en `Error` con mensaje legible. */
+export function throwSupabaseError(
+  error: { message?: string; details?: string; hint?: string; code?: string } | null,
+  prefix: string
+): void {
+  if (error) {
+    throw new Error(`${prefix}: ${formatSupabaseUserError(error)}`);
+  }
+}

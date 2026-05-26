@@ -23,6 +23,7 @@ import {
   buildCredentialNftOnchainName,
   type CertificateMetadata,
 } from "@/lib/solana/metadata.service";
+import { buildVerifyPageUrl, getPublicAppBaseUrl } from "@/lib/public-app-url";
 
 export type MintStep =
   | "idle"
@@ -171,7 +172,7 @@ export function useMintCertificate(captureRef: RefObject<DiplomaCaptureHandle | 
       return fail("Componente de captura del diploma no disponible. Recargue la página.");
     }
 
-    const baseUrl = (import.meta.env.VITE_PUBLIC_APP_BASE_URL?.trim() || window.location.origin).replace(/\/$/, "");
+    const baseUrl = getPublicAppBaseUrl() || window.location.origin.replace(/\/$/, "");
 
     let lastCertId: string | null = null;
 
@@ -235,7 +236,7 @@ export function useMintCertificate(captureRef: RefObject<DiplomaCaptureHandle | 
 
       const credentialExtensions = parseCredentialExtensions(cert.credential_extensions);
       const verificationCode = certificadosService.hashToCode(cert.hash_sha256);
-      const verifyUrl = `${baseUrl}/verificar/${encodeURIComponent(verificationCode)}`;
+      const verifyUrl = buildVerifyPageUrl(verificationCode);
       const externalUrl = verifyUrl;
 
       const issueDateLabel = new Date(params.fechaEmision).toLocaleDateString("es-CL", {

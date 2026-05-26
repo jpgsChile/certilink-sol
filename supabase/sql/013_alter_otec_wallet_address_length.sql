@@ -4,8 +4,7 @@
 ALTER TABLE public.otec
   ALTER COLUMN wallet_address TYPE character varying(128);
 
--- Opcional: alinear student_wallets.wallet_address si también está en 42
--- ALTER TABLE public.student_wallets
---   ALTER COLUMN wallet_address TYPE character varying(128);
+alter table public.student_wallets
+  alter column wallet_address type character varying(128);
 
 NOTIFY pgrst, 'reload schema';

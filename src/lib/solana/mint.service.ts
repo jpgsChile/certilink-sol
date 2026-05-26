@@ -7,6 +7,12 @@ import { generateSigner, percentAmount, publicKey as umiPublicKey } from "@metap
 import type { WalletAdapter } from "@solana/wallet-adapter-base";
 import bs58 from "bs58";
 import { SOLANA_RPC_URL, getExplorerUrl, CERTILINK_COLLECTION, METAPLEX_TOKEN_METADATA_PROGRAM, SOLANA_REFERENCE_CHAIN_ID } from "./config";
+import {
+  compactMetaplexMetadataUri,
+  truncateMetaplexOnchainField,
+  METAPLEX_MAX_NAME_BYTES,
+  METAPLEX_MAX_SYMBOL_BYTES,
+} from "./metadata.service";
 import { ensureStudentWallet } from "./wallet.service";
 import { certificadosService } from "@/lib/services/certificados.service";
 import type { Json } from "@/lib/database.types";
@@ -48,11 +54,15 @@ export async function mintCertificateNFT(params: MintCertificateParams): Promise
 
   const mintSigner = generateSigner(umi);
 
+  const onchainName = truncateMetaplexOnchainField(nftName, METAPLEX_MAX_NAME_BYTES);
+  const onchainSymbol = truncateMetaplexOnchainField(CERTILINK_COLLECTION.symbol, METAPLEX_MAX_SYMBOL_BYTES);
+  const onchainUri = compactMetaplexMetadataUri(metadataUri);
+
   const txBuilder = createNft(umi, {
     mint: mintSigner,
-    name: nftName.slice(0, 32),
-    symbol: CERTILINK_COLLECTION.symbol,
-    uri: metadataUri,
+    name: onchainName,
+    symbol: onchainSymbol,
+    uri: onchainUri,
     sellerFeeBasisPoints: percentAmount(0),
     tokenOwner: umiPublicKey(studentWallet.publicKey),
     creators: [
@@ -94,31 +104,23 @@ export async function mintCertificateNFT(params: MintCertificateParams): Promise
     ipfs_pdf_url: params.ipfsPdfUrl,
   };
 
-  try {
-    await certificadosService.updateBlockchainFields(certificadoId, {
-      tx_hash: bs58Sig,
-      token_id: mintAddress,
-      contract_address: METAPLEX_TOKEN_METADATA_PROGRAM,
-      chain_id: SOLANA_REFERENCE_CHAIN_ID,
-      ipfs_metadata_url: params.ipfsMetadataUrl,
-      ipfs_image_url: params.ipfsImageUrl,
-      ipfs_pdf_url: params.ipfsPdfUrl,
-      nft_status: "minted",
-      nft_issued_at: new Date().toISOString(),
-      estado: "emitido",
-      metadata: metadataJson,
-      last_blockchain_error: null,
-      ...(studentWallet.studentWalletId
-        ? { owner_student_wallet_id: studentWallet.studentWalletId }
-        : {}),
-    });
-  } catch (e) {
-    const detail = e instanceof Error ? e.message : String(e);
-    console.error("Error al persistir datos on-chain:", e);
-    throw new Error(
-      `La credencial se registró en Solana, pero no se pudo guardar el comprobante en el sistema (${detail}). Contacte soporte con el identificador del certificado.`
-    );
-  }
+  await certificadosService.persistMintComprobante(certificadoId, {
+    tx_hash: bs58Sig,
+    token_id: mintAddress,
+    contract_address: METAPLEX_TOKEN_METADATA_PROGRAM,
+    chain_id: SOLANA_REFERENCE_CHAIN_ID,
+    ipfs_metadata_url: params.ipfsMetadataUrl,
+    ipfs_image_url: params.ipfsImageUrl,
+    ipfs_pdf_url: params.ipfsPdfUrl,
+    nft_status: "minted",
+    nft_issued_at: new Date().toISOString(),
+    estado: "emitido",
+    metadata: metadataJson,
+    last_blockchain_error: null,
+    ...(studentWallet.studentWalletId
+      ? { owner_student_wallet_id: studentWallet.studentWalletId }
+      : {}),
+  });
 
   return {
     success: true,

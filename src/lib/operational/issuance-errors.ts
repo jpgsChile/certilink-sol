@@ -122,6 +122,21 @@ export function classifyIssuanceError(err: unknown): ClassifiedIssuanceError {
   }
 
   if (
+    m.includes("name too long") ||
+    m.includes("symbol too long") ||
+    m.includes("uri too long") ||
+    (m.includes("custom program error") && m.includes("0xb"))
+  ) {
+    return {
+      category: "transaction",
+      userMessage:
+        "El registro digital en blockchain excedía el tamaño permitido (nombre o enlace). Ya se ajustó automáticamente; reintente la emisión una vez.",
+      retryable: false,
+      technical,
+    };
+  }
+
+  if (
     m.includes("transaction") ||
     m.includes("simulation failed") ||
     m.includes("instruction") ||
@@ -135,10 +150,55 @@ export function classifyIssuanceError(err: unknown): ClassifiedIssuanceError {
     };
   }
 
-  if (m.includes("conecte su billetera") || m.includes("wallet") || m.includes("billetera")) {
+  if (
+    m.includes("row-level security") ||
+    m.includes("student_wallets") ||
+    (m.includes("42501") && m.includes("billetera académica"))
+  ) {
+    return {
+      category: "database",
+      userMessage:
+        "No fue posible registrar la billetera académica del estudiante (permisos en base de datos). Ejecute supabase/sql/021_student_wallets_disable_rls.sql en Supabase y recargue el esquema (API → Reload). Luego reintente la emisión; en ese momento sí se solicitará autorizar en su billetera institucional.",
+      retryable: false,
+      technical,
+    };
+  }
+
+  if (m.includes("billetera académica")) {
+    return {
+      category: "database",
+      userMessage: "No fue posible preparar la billetera académica del estudiante. Intente nuevamente o contacte soporte institucional.",
+      retryable: false,
+      technical,
+    };
+  }
+
+  if (
+    m.includes("conecte su billetera") ||
+    m.includes("billetera institucional") ||
+    (m.includes("wallet") && !m.includes("student_wallet"))
+  ) {
     return {
       category: "wallet",
       userMessage: "Revise la conexión de su billetera institucional e intente nuevamente.",
+      retryable: false,
+      technical,
+    };
+  }
+
+  if (m.includes("value too long") || m.includes("character varying(42)") || m.includes("023_certificados_solana")) {
+    return {
+      category: "database",
+      userMessage: technical,
+      retryable: false,
+      technical,
+    };
+  }
+
+  if (m.includes("registró en solana") || m.includes("no se pudo guardar el comprobante")) {
+    return {
+      category: "database",
+      userMessage: technical,
       retryable: false,
       technical,
     };
@@ -148,6 +208,16 @@ export function classifyIssuanceError(err: unknown): ClassifiedIssuanceError {
     return {
       category: "database",
       userMessage: technical,
+      retryable: false,
+      technical,
+    };
+  }
+
+  if (m.includes("invalid input value for enum") || m.includes("certificado_nft_status")) {
+    return {
+      category: "database",
+      userMessage:
+        "El estado blockchain del certificado no coincide con la base de datos. Ejecute supabase/sql/020_certificados_nft_status_text.sql en Supabase y recargue el esquema (API → Reload).",
       retryable: false,
       technical,
     };
