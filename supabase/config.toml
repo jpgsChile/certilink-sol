@@ -1,0 +1,6 @@
+# CertiLink — Supabase CLI (funciones Edge)
+# https://supabase.com/docs/guides/cli/config
+
+[functions.student-wallet-custody]
+# La app OTEC usa sesión custom; la función valida x-certilink-custody-secret + service role.
+verify_jwt = false

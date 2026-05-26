@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { UserPlus, Search, MoreHorizontal, Pencil, Trash2, Loader2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { UserPlus, Search, MoreHorizontal, Pencil, Trash2, Loader2, IdCard } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { DataTable } from "@/components/DataTable";
@@ -31,10 +32,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useAlumnos } from "@/hooks/useAlumnos";
+import { useStudentWallet } from "@/hooks/useStudentWallet";
+import { useRutField } from "@/hooks/useRutField";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+import { displayRut, rutMatchesSearch, rutsEqual, validateRut, cleanRut, RUT_MESSAGES } from "@/lib/utils/rut";
 import type { Alumno } from "@/lib/database.types";
 
-const emptyForm = { nombre: "", apellido: "", rut: "", email: "", telefono: "" };
+const emptyForm = { nombre: "", apellido: "", email: "", telefono: "" };
 
 export default function Students() {
   const [search, setSearch] = useState("");
@@ -44,21 +49,29 @@ export default function Students() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
+  const rutField = useRutField();
 
   const { alumnos, loading, createAlumno, updateAlumno, deleteAlumno } = useAlumnos();
   const { toast } = useToast();
+  const studentWalletState = useStudentWallet(editingAlumno?.id ?? null);
 
-  const filteredStudents = alumnos.filter(
-    (s) =>
-      s.nombre.toLowerCase().includes(search.toLowerCase()) ||
-      s.apellido.toLowerCase().includes(search.toLowerCase()) ||
-      s.rut.includes(search) ||
-      (s.email ?? "").toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredStudents = alumnos.filter((s) => {
+    const qRaw = search.trim();
+    if (!qRaw) return true;
+    const q = qRaw.toLowerCase();
+    const rutQ = cleanRut(qRaw);
+    return (
+      s.nombre.toLowerCase().includes(q) ||
+      s.apellido.toLowerCase().includes(q) ||
+      (rutQ.length > 0 && rutMatchesSearch(s.rut, qRaw)) ||
+      (s.email ?? "").toLowerCase().includes(q)
+    );
+  });
 
   const openCreate = () => {
     setEditingAlumno(null);
     setForm(emptyForm);
+    rutField.reset();
     setDialogOpen(true);
   };
 
@@ -67,10 +80,10 @@ export default function Students() {
     setForm({
       nombre: alumno.nombre,
       apellido: alumno.apellido,
-      rut: alumno.rut,
       email: alumno.email ?? "",
       telefono: alumno.telefono || "",
     });
+    rutField.reset(alumno.rut);
     setDialogOpen(true);
   };
 
@@ -81,17 +94,40 @@ export default function Students() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    rutField.markTouched();
+    if (!validateRut(rutField.value)) {
+      toast({ title: RUT_MESSAGES.invalid, description: "Revise el RUT e intente nuevamente.", variant: "destructive" });
+      return;
+    }
+    const normalized = rutField.getNormalizedStrict();
+    if (!normalized) {
+      toast({ title: RUT_MESSAGES.invalid, description: "Revise el RUT e intente nuevamente.", variant: "destructive" });
+      return;
+    }
+    const rutFormatted = normalized.formatted;
+    const duplicate = alumnos.some(
+      (a) => a.id !== editingAlumno?.id && rutsEqual(a.rut, rutFormatted)
+    );
+    if (duplicate) {
+      toast({
+        title: "RUT duplicado",
+        description: "Ya existe un estudiante con este RUT en su institución.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSubmitting(true);
     try {
       if (editingAlumno) {
-        await updateAlumno(editingAlumno.id, form);
+        await updateAlumno(editingAlumno.id, { ...form, rut: rutFormatted });
         toast({ title: "Estudiante actualizado", description: `${form.nombre} ${form.apellido} fue actualizado` });
       } else {
-        await createAlumno(form);
+        await createAlumno({ ...form, rut: rutFormatted });
         toast({ title: "Estudiante creado", description: `${form.nombre} ${form.apellido} fue inscrito` });
       }
       setDialogOpen(false);
       setForm(emptyForm);
+      rutField.reset();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Error al guardar";
       toast({ title: "Error", description: msg, variant: "destructive" });
@@ -121,7 +157,7 @@ export default function Students() {
       render: (_: unknown, row: Record<string, unknown>) =>
         `${row.nombre} ${row.apellido}`,
     },
-    { key: "rut", label: "RUT" },
+    { key: "rut", label: "RUT", render: (v: unknown) => displayRut(v as string) },
     { key: "email", label: "Correo" },
     { key: "telefono", label: "Teléfono", render: (v: unknown) => (v as string) || "—" },
     {
@@ -135,6 +171,12 @@ export default function Students() {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild className="gap-2">
+              <Link to={`/identidad-academica/${row.id as string}`}>
+                <IdCard className="h-3.5 w-3.5" />
+                Mi identidad académica
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem className="gap-2" onClick={() => openEdit(row as unknown as Alumno)}>
               <Pencil className="h-3.5 w-3.5" /> Editar
             </DropdownMenuItem>
@@ -225,13 +267,23 @@ export default function Students() {
             <div className="space-y-2">
               <Label>RUT</Label>
               <Input
-                placeholder="12.345.678-9"
-                value={form.rut}
-                onChange={(e) => setForm({ ...form, rut: e.target.value })}
-                className="h-10"
+                placeholder="12.345.678-5"
+                value={rutField.value}
+                onChange={rutField.onChange}
+                onBlur={rutField.onBlur}
+                className={cn("h-10", rutField.error && "border-destructive focus-visible:ring-destructive")}
                 required
                 disabled={submitting}
+                inputMode="text"
+                autoComplete="off"
               />
+              {rutField.error ? (
+                <p className="text-xs text-destructive">{rutField.error}</p>
+              ) : rutField.helperOk ? (
+                <p className="text-xs text-emerald-700 dark:text-emerald-500">{rutField.helperOk}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Se formatea automáticamente mientras escribe.</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Correo electrónico</Label>
@@ -255,6 +307,35 @@ export default function Students() {
                 disabled={submitting}
               />
             </div>
+            {editingAlumno ? (
+              <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+                <p className="text-xs font-medium text-foreground">Perfil digital (billetera académica)</p>
+                {studentWalletState.loading ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Cargando…
+                  </div>
+                ) : studentWalletState.error ? (
+                  <p className="text-xs text-destructive">{studentWalletState.error}</p>
+                ) : studentWalletState.wallet ? (
+                  <div className="text-xs space-y-1">
+                    <p className="text-muted-foreground">Red: {studentWalletState.network}</p>
+                    <p className="font-mono break-all text-foreground">
+                      {studentWalletState.wallet.wallet_address.slice(0, 8)}…
+                      {studentWalletState.wallet.wallet_address.slice(-6)}
+                    </p>
+                    <p className="text-muted-foreground">
+                      Custodial · {studentWalletState.wallet.provider}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Aún sin billetera persistente en base de datos. Se crea al emitir la primera credencial digital
+                    verificada.
+                  </p>
+                )}
+              </div>
+            ) : null}
             <DialogFooter className="gap-2 pt-2 sm:gap-2">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>
                 Cancelar

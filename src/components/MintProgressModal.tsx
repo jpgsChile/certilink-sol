@@ -38,6 +38,7 @@ const STEPS: { key: MintStep; label: string }[] = [
   { key: "uploading_ipfs", label: "Subiendo a IPFS" },
   { key: "registering_metadata", label: "Registrando metadata" },
   { key: "blockchain_emission", label: "Emisión blockchain" },
+  { key: "retrying", label: "Reintentando registro blockchain" },
   { key: "final_confirmation", label: "Confirmación final" },
 ];
 
@@ -47,6 +48,7 @@ const STEP_ORDER: MintStep[] = [
   "uploading_ipfs",
   "registering_metadata",
   "blockchain_emission",
+  "retrying",
   "final_confirmation",
   "complete",
 ];

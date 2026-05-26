@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Plus,
@@ -12,6 +12,7 @@ import {
   Award,
   UserPlus,
   Check,
+  GraduationCap,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageHeader } from "@/components/PageHeader";
@@ -59,14 +60,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useCursos } from "@/hooks/useCursos";
+import { useLineasAcademicas } from "@/hooks/useLineasAcademicas";
 import { useCursoAlumnos } from "@/hooks/useCursoAlumnos";
 import { useAlumnos } from "@/hooks/useAlumnos";
 import { useAuth } from "@/hooks/useAuth";
+import { useOtecWallet } from "@/hooks/useOtecWallet";
+import { useMintCertificate, type IssueCertificateParams } from "@/hooks/useMintCertificate";
+import { useBulkIssuanceQueue, createBulkJob } from "@/hooks/useBulkIssuanceQueue";
 import { useToast } from "@/hooks/use-toast";
 import { formatSupabaseUserError } from "@/lib/supabase-error";
+import { cleanRut, displayRut, rutMatchesSearch, validateRut, normalizeRut } from "@/lib/utils/rut";
+import { certificadosService } from "@/lib/services/certificados.service";
+import { isPinataConfigured } from "@/lib/services/pinata.service";
+import { DiplomaCaptureHost, type DiplomaCaptureHandle } from "@/components/credential/DiplomaCaptureHost";
+import { BulkIssuanceDashboard } from "@/components/credential/BulkIssuanceDashboard";
+import type { Certificado } from "@/lib/database.types";
 import type { Curso, CursoAlumnoConAlumno, CursoAlumnoEstado } from "@/lib/database.types";
 
-const emptyForm = { codigo: "", nombre: "", horas: "", descripcion: "" };
+const emptyForm = { codigo: "", nombre: "", horas: "", descripcion: "", programa_url: "", linea_academica_id: "" };
 
 const estadoLabels: Record<CursoAlumnoEstado, string> = {
   inscrito: "Inscrito",
@@ -101,7 +112,21 @@ export default function Courses() {
   const [editEstado, setEditEstado] = useState<CursoAlumnoEstado>("inscrito");
   const [editSubmitting, setEditSubmitting] = useState(false);
 
+  const [selectedApprovedIds, setSelectedApprovedIds] = useState<Set<string>>(new Set());
+  const [cursoCertByAlumno, setCursoCertByAlumno] = useState<
+    Map<string, Pick<Certificado, "id" | "tx_hash" | "hash_sha256">>
+  >(new Map());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkDashboardOpen, setBulkDashboardOpen] = useState(false);
+  const [bulkFechaEmision, setBulkFechaEmision] = useState(new Date().toISOString().split("T")[0]);
+
+  const bulkCaptureRef = useRef<DiplomaCaptureHandle | null>(null);
+  const { issueCertificate } = useMintCertificate(bulkCaptureRef);
+  const bulkQueue = useBulkIssuanceQueue(issueCertificate);
+  const { isVerified, isConnected } = useOtecWallet();
+
   const { cursos, loading, createCurso, updateCurso, deleteCurso } = useCursos();
+  const { lineas } = useLineasAcademicas();
   const { alumnos, loading: alumnosLoading, error: alumnosError, refetch: refetchAlumnos } = useAlumnos();
   const {
     inscripciones,
@@ -120,11 +145,13 @@ export default function Courses() {
   );
 
   const alumnosDisponiblesFiltrados = useMemo(() => {
-    const q = enrollSearch.trim().toLowerCase();
-    if (!q) return alumnosDisponibles;
+    const raw = enrollSearch.trim();
+    const q = raw.toLowerCase();
+    if (!raw) return alumnosDisponibles;
+    const rutQ = cleanRut(raw);
     return alumnosDisponibles.filter((a) => {
       const blob = `${a.nombre} ${a.apellido} ${a.rut} ${a.email ?? ""}`.toLowerCase();
-      return blob.includes(q);
+      return blob.includes(q) || (rutQ.length > 0 && rutMatchesSearch(a.rut, raw));
     });
   }, [alumnosDisponibles, enrollSearch]);
 
@@ -142,6 +169,41 @@ export default function Courses() {
       return na.localeCompare(nb, "es");
     });
   }, [inscripciones]);
+
+  const participantsCursoDetail = useMemo(
+    () => (participantsCurso ? cursos.find((c) => c.id === participantsCurso.id) ?? participantsCurso : null),
+    [participantsCurso, cursos]
+  );
+
+  const approvedInscripciones = useMemo(
+    () => sortedInscripciones.filter((row) => row.aprobado),
+    [sortedInscripciones]
+  );
+
+  const loadCursoCertSummaries = useCallback(async (cursoId: string) => {
+    if (!otec?.id) {
+      setCursoCertByAlumno(new Map());
+      return;
+    }
+    try {
+      const rows = await certificadosService.listSummariesByCurso(otec.id, cursoId);
+      const map = new Map<string, Pick<Certificado, "id" | "tx_hash" | "hash_sha256">>();
+      for (const row of rows) map.set(row.alumno_id, row);
+      setCursoCertByAlumno(map);
+    } catch {
+      setCursoCertByAlumno(new Map());
+    }
+  }, [otec?.id]);
+
+  useEffect(() => {
+    if (!participantsCurso?.id) {
+      setCursoCertByAlumno(new Map());
+      setSelectedApprovedIds(new Set());
+      return;
+    }
+    void loadCursoCertSummaries(participantsCurso.id);
+    setSelectedApprovedIds(new Set());
+  }, [participantsCurso?.id, loadCursoCertSummaries]);
 
   const filteredCourses = cursos.filter(
     (c) =>
@@ -162,6 +224,8 @@ export default function Courses() {
       nombre: curso.nombre,
       horas: curso.horas.toString(),
       descripcion: curso.descripcion || "",
+      programa_url: curso.programa_url || "",
+      linea_academica_id: curso.linea_academica_id || "",
     });
     setDialogOpen(true);
   };
@@ -172,7 +236,130 @@ export default function Courses() {
   };
 
   const openParticipants = (curso: Curso) => {
+    setSelectedApprovedIds(new Set());
     setParticipantsCurso(curso);
+  };
+
+  const toggleApprovedSelection = (alumnoId: string) => {
+    setSelectedApprovedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(alumnoId)) next.delete(alumnoId);
+      else next.add(alumnoId);
+      return next;
+    });
+  };
+
+  const selectAllApprovedEligible = () => {
+    const eligible = approvedInscripciones.filter((row) => {
+      const cert = cursoCertByAlumno.get(row.alumno_id);
+      return !cert?.tx_hash;
+    });
+    setSelectedApprovedIds(new Set(eligible.map((r) => r.alumno_id)));
+  };
+
+  const buildIssueParams = (row: CursoAlumnoConAlumno, curso: Curso, fecha: string): IssueCertificateParams | null => {
+    const al = row.alumnos;
+    if (!al || !otec) return null;
+    return {
+      alumnoId: row.alumno_id,
+      cursoId: curso.id,
+      fechaEmision: fecha,
+      studentName: `${al.nombre} ${al.apellido}`,
+      studentRut: validateRut(al.rut) ? normalizeRut(al.rut).formatted : al.rut,
+      institutionName: otec.nombre,
+      courseName: curso.nombre,
+      courseHours: curso.horas,
+      academicLineName: curso.lineas_academicas?.nombre ?? null,
+      academicLineDescription: curso.lineas_academicas?.descripcion ?? null,
+      academicLineBannerUrl: curso.lineas_academicas?.banner_url?.trim() || null,
+      programUrl: curso.programa_url?.trim() || null,
+    };
+  };
+
+  const openBulkConfirm = () => {
+    if (!participantsCursoDetail || !otec) return;
+    if (selectedApprovedIds.size === 0) {
+      toast({ title: "Seleccione participantes", description: "Marque al menos un participante aprobado.", variant: "destructive" });
+      return;
+    }
+    if (!isConnected || !isVerified) {
+      toast({
+        title: "Billetera requerida",
+        description: "Conecte y verifique su billetera institucional para emitir credenciales en blockchain.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!isPinataConfigured()) {
+      toast({
+        title: "Configuración incompleta",
+        description: "Configure VITE_PINATA_JWT para emisión verificada con diploma e IPFS.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setBulkConfirmOpen(true);
+  };
+
+  const startBulkIssuance = async () => {
+    const curso = participantsCursoDetail;
+    if (!curso || !otec) return;
+
+    const rows = approvedInscripciones.filter((r) => selectedApprovedIds.has(r.alumno_id));
+    const jobs = rows.map((row) => {
+      const cert = cursoCertByAlumno.get(row.alumno_id);
+      const params = buildIssueParams(row, curso, bulkFechaEmision);
+      if (!params) {
+        return createBulkJob({
+          alumnoId: row.alumno_id,
+          studentName: row.alumnos ? `${row.alumnos.nombre} ${row.alumnos.apellido}` : "Participante",
+          studentRut: row.alumnos?.rut ?? "",
+          params: {
+            alumnoId: row.alumno_id,
+            cursoId: curso.id,
+            fechaEmision: bulkFechaEmision,
+            studentName: "",
+            studentRut: "",
+            institutionName: otec.nombre,
+            courseName: curso.nombre,
+            courseHours: curso.horas,
+          },
+          status: "skipped",
+          skipReason: "Datos del participante incompletos",
+        });
+      }
+      if (cert?.tx_hash) {
+        return createBulkJob({
+          alumnoId: row.alumno_id,
+          studentName: params.studentName,
+          studentRut: params.studentRut,
+          params,
+          certificadoId: cert.id,
+          status: "skipped",
+          skipReason: "Credencial ya emitida con registro blockchain",
+        });
+      }
+      return createBulkJob({
+        alumnoId: row.alumno_id,
+        studentName: params.studentName,
+        studentRut: params.studentRut,
+        params,
+        certificadoId: cert?.id ?? null,
+      });
+    });
+
+    setBulkConfirmOpen(false);
+    setBulkDashboardOpen(true);
+    await bulkQueue.enqueueAndStart(jobs);
+    if (participantsCurso?.id) void loadCursoCertSummaries(participantsCurso.id);
+  };
+
+  const handleBulkDashboardClose = () => {
+    if (bulkQueue.running) return;
+    setBulkDashboardOpen(false);
+    bulkQueue.reset();
+    setSelectedApprovedIds(new Set());
+    if (participantsCurso?.id) void loadCursoCertSummaries(participantsCurso.id);
   };
 
   const openEnroll = () => {
@@ -207,6 +394,8 @@ export default function Courses() {
         nombre: form.nombre,
         horas: parseInt(form.horas) || 0,
         descripcion: form.descripcion || null,
+        programa_url: form.programa_url.trim() || null,
+        linea_academica_id: form.linea_academica_id.trim() || null,
       };
       if (editingCurso) {
         await updateCurso(editingCurso.id, payload);
@@ -365,8 +554,8 @@ export default function Courses() {
         onAction={openCreate}
       />
 
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1 max-w-sm">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
+        <div className="relative flex-1 max-w-sm min-w-[200px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"
@@ -376,7 +565,13 @@ export default function Courses() {
             className="pl-9 bg-card"
           />
         </div>
-        <p className="text-sm text-muted-foreground">
+        <Button type="button" variant="outline" size="sm" className="gap-2 shrink-0" asChild>
+          <Link to="/lineas-academicas">
+            <GraduationCap className="h-4 w-4" />
+            Líneas académicas
+          </Link>
+        </Button>
+        <p className="text-sm text-muted-foreground sm:ml-auto">
           {loading ? "Cargando..." : `${filteredCourses.length} curso${filteredCourses.length !== 1 ? "s" : ""}`}
         </p>
       </div>
@@ -505,6 +700,52 @@ export default function Courses() {
                 disabled={submitting}
               />
             </div>
+            <div className="space-y-2">
+              <Label>Línea académica (opcional)</Label>
+              <Select
+                value={form.linea_academica_id || "__none__"}
+                onValueChange={(v) => setForm({ ...form, linea_academica_id: v === "__none__" ? "" : v })}
+                disabled={submitting}
+              >
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Sin línea asignada" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Sin línea asignada</SelectItem>
+                  {lineas.map((l) => (
+                    <SelectItem key={l.id} value={l.id}>
+                      {l.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                Defina líneas en{" "}
+                <Link to="/lineas-academicas" className="font-medium text-primary hover:underline">
+                  Líneas académicas
+                </Link>{" "}
+                para asociar descripción, sitio y banner institucional.
+                {lineas.length === 0 && (
+                  <span className="block mt-1 text-warning-foreground/90">
+                    Aún no hay líneas registradas.{" "}
+                    <Link to="/lineas-academicas" className="font-medium text-primary hover:underline">
+                      Crear la primera
+                    </Link>
+                  </span>
+                )}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Enlace al programa en la web (opcional)</Label>
+              <Input
+                type="url"
+                placeholder="https://www.institución.cl/programa"
+                value={form.programa_url}
+                onChange={(e) => setForm({ ...form, programa_url: e.target.value })}
+                className="h-10"
+                disabled={submitting}
+              />
+            </div>
             <DialogFooter className="gap-2 pt-2 sm:gap-2">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>
                 Cancelar
@@ -551,12 +792,31 @@ export default function Courses() {
             </div>
           )}
 
-          <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <Button type="button" size="sm" className="gap-1.5 shrink-0" onClick={openEnroll} disabled={alumnosLoading}>
-              {alumnosLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />}
-              Inscribir alumno
-            </Button>
-            <p className="text-[11px] leading-snug text-muted-foreground sm:max-w-[220px] sm:text-right">
+          <div className="flex flex-col gap-2 border-b border-border px-4 py-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <Button type="button" size="sm" className="gap-1.5 shrink-0" onClick={openEnroll} disabled={alumnosLoading}>
+                {alumnosLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />}
+                Inscribir alumno
+              </Button>
+              {approvedInscripciones.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" variant="outline" size="sm" className="text-xs h-8" onClick={selectAllApprovedEligible}>
+                    Seleccionar elegibles
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="gap-1.5 h-8 bg-gradient-primary text-primary-foreground hover:opacity-90"
+                    onClick={openBulkConfirm}
+                    disabled={selectedApprovedIds.size === 0 || bulkQueue.running}
+                  >
+                    <Award className="h-3.5 w-3.5" />
+                    Emitir credenciales ({selectedApprovedIds.size})
+                  </Button>
+                </div>
+              )}
+            </div>
+            <p className="text-[11px] leading-snug text-muted-foreground">
               {alumnosLoading
                 ? "Cargando alumnos de la institución…"
                 : alumnos.length === 0 ? (
@@ -591,15 +851,37 @@ export default function Courses() {
                 {sortedInscripciones.map((row) => {
                   const al = row.alumnos;
                   const nombre = al ? `${al.nombre} ${al.apellido}` : `Alumno (${row.alumno_id.slice(0, 8)}…)`;
+                  const cert = cursoCertByAlumno.get(row.alumno_id);
+                  const hasBlockchain = Boolean(cert?.tx_hash);
+                  const canBulkSelect = row.aprobado && !hasBlockchain;
+                  const isSelected = selectedApprovedIds.has(row.alumno_id);
                   return (
                     <li
                       key={row.id}
-                      className="rounded-xl border border-border bg-card p-4 shadow-sm"
+                      className={`rounded-xl border bg-card p-4 shadow-sm ${isSelected ? "border-primary/40 ring-1 ring-primary/20" : "border-border"}`}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          <p className="text-sm font-semibold leading-snug text-foreground">{nombre}</p>
-                          <p className="text-xs text-muted-foreground">{al?.rut ?? "—"}</p>
+                        <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                          {canBulkSelect ? (
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleApprovedSelection(row.alumno_id)}
+                              className="mt-1 h-4 w-4 shrink-0 rounded border-border accent-primary"
+                              aria-label={`Seleccionar ${nombre} para emisión masiva`}
+                            />
+                          ) : (
+                            <span className="mt-1 h-4 w-4 shrink-0" aria-hidden />
+                          )}
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <p className="text-sm font-semibold leading-snug text-foreground">{nombre}</p>
+                            <p className="text-xs text-muted-foreground">{displayRut(al?.rut)}</p>
+                            {hasBlockchain && (
+                              <p className="text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                                Credencial emitida · {certificadosService.hashToCode(cert!.hash_sha256)}
+                              </p>
+                            )}
+                          </div>
                         </div>
                         <span
                           className={
@@ -711,8 +993,9 @@ export default function Courses() {
           </div>
 
           <div className="border-t border-border px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
-            Cuando el participante esté aprobado, use <span className="font-medium text-foreground">Emitir credencial digital</span> o la
-            emisión desde la página Certificados. La emisión masiva llegará en una fase posterior.
+            Flujo operativo: apruebe participantes, selecciónelos y use{" "}
+            <span className="font-medium text-foreground">Emitir credenciales</span> para emisión masiva con diploma, IPFS y
+            registro blockchain. También puede emitir de forma individual desde Certificados.
           </div>
         </SheetContent>
       </Sheet>
@@ -793,7 +1076,7 @@ export default function Courses() {
                         alumnosDisponiblesFiltrados.map((a) => (
                           <SelectItem key={a.id} value={a.id}>
                             <span className="truncate">
-                              {a.nombre} {a.apellido} — {a.rut}
+                              {a.nombre} {a.apellido} — {displayRut(a.rut)}
                             </span>
                           </SelectItem>
                         ))
@@ -903,6 +1186,63 @@ export default function Courses() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Emitir credenciales</DialogTitle>
+            <DialogDescription>
+              Se procesarán {selectedApprovedIds.size} participante{selectedApprovedIds.size !== 1 ? "s" : ""} aprobado
+              {selectedApprovedIds.size !== 1 ? "s" : ""} en cola secuencial. Deberá autorizar cada registro en su billetera
+              institucional.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="bulk-fecha">Fecha de emisión</Label>
+            <Input
+              id="bulk-fecha"
+              type="date"
+              value={bulkFechaEmision}
+              onChange={(e) => setBulkFechaEmision(e.target.value)}
+              className="h-10"
+            />
+          </div>
+          <DialogFooter className="gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => setBulkConfirmOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="bg-gradient-primary text-primary-foreground hover:opacity-90"
+              onClick={() => void startBulkIssuance()}
+            >
+              Iniciar emisión masiva
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <BulkIssuanceDashboard
+        open={bulkDashboardOpen}
+        onOpenChange={(o) => {
+          if (!o) handleBulkDashboardClose();
+          else setBulkDashboardOpen(true);
+        }}
+        jobs={bulkQueue.jobs}
+        stats={bulkQueue.stats}
+        running={bulkQueue.running}
+        overallProgress={bulkQueue.overallProgress}
+        activeJob={bulkQueue.activeJob}
+        courseLabel={
+          participantsCursoDetail
+            ? `${participantsCursoDetail.codigo} · ${participantsCursoDetail.nombre}`
+            : undefined
+        }
+        onRetryFailed={() => void bulkQueue.retryFailed()}
+        onClose={handleBulkDashboardClose}
+      />
+
+      <DiplomaCaptureHost ref={bulkCaptureRef} />
     </DashboardLayout>
   );
 }

@@ -3,8 +3,11 @@
 
 import { clusterApiUrl } from "@solana/web3.js";
 
-export const SOLANA_NETWORK = "devnet" as const;
-export const SOLANA_RPC_URL = clusterApiUrl("devnet");
+/** Cluster activo; el tipo admite migración a mainnet sin reescribir servicios. */
+export type SolanaClusterNetwork = "devnet" | "mainnet-beta" | "localnet";
+
+export const SOLANA_NETWORK: SolanaClusterNetwork = "devnet";
+export const SOLANA_RPC_URL = clusterApiUrl(SOLANA_NETWORK);
 export const SOLANA_EXPLORER_BASE = "https://explorer.solana.com";
 
 /** Identificador de referencia para integraciones (no es chainId EVM). Devnet: 103, mainnet-beta: 101. */

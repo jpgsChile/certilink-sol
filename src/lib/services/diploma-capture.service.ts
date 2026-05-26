@@ -1,9 +1,9 @@
 import * as htmlToImage from "html-to-image";
 
 const CAPTURE_OPTIONS: Parameters<typeof htmlToImage.toBlob>[1] = {
-  pixelRatio: 2,
+  pixelRatio: 3,
   cacheBust: true,
-  backgroundColor: "#f8fafc",
+  backgroundColor: "#faf9f6",
   skipFonts: true,
 };
 

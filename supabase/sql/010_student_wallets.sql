@@ -1,5 +1,5 @@
 /*
-  FASE 4 — Infraestructura student_wallets (custodial, Solana, NFT futuro)
+  FASE 4 — Borrador histórico. Esquema activo y desplegable: supabase/sql/017_student_wallets.sql
   =======================================================================
   Objetivo: no guardar secretos en public.alumnos; cifrado en servidor o vault.
 

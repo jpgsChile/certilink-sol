@@ -18,6 +18,7 @@ import {
 
 import { AuthProvider } from '@/hooks/useAuth';
 import { Toaster } from '@/components/ui/toaster';
+import { OperationalErrorBoundary } from '@/components/OperationalErrorBoundary';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 // Pages
@@ -26,7 +27,9 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Students from './pages/Students';
+import AcademicIdentity from './pages/AcademicIdentity';
 import Courses from './pages/Courses';
+import AcademicLines from './pages/AcademicLines';
 import Certificates from './pages/Certificates';
 import Verify from './pages/Verify';
 import NotFound from './pages/NotFound';
@@ -58,6 +61,7 @@ const App = () => {
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
           <AuthProvider>
+            <OperationalErrorBoundary scope="certilink-app">
 
             <Routes>
               {/* Public routes */}
@@ -88,10 +92,28 @@ const App = () => {
               />
 
               <Route
+                path="/identidad-academica/:alumnoId"
+                element={
+                  <ProtectedRoute>
+                    <AcademicIdentity />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
                 path="/cursos"
                 element={
                   <ProtectedRoute>
                     <Courses />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/lineas-academicas"
+                element={
+                  <ProtectedRoute>
+                    <AcademicLines />
                   </ProtectedRoute>
                 }
               />
@@ -122,6 +144,8 @@ const App = () => {
 
             {/* Global notifications */}
             <Toaster />
+
+            </OperationalErrorBoundary>
 
           </AuthProvider>
         </WalletModalProvider>

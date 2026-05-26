@@ -47,12 +47,14 @@ import { useMintCertificate, type IssueCertificateParams } from "@/hooks/useMint
 import { isPinataConfigured } from "@/lib/services/pinata.service";
 import { DiplomaCaptureHost, type DiplomaCaptureHandle } from "@/components/credential/DiplomaCaptureHost";
 import { CredentialPreviewDialog } from "@/components/credential/CredentialPreviewDialog";
+import { IssuanceDiagnosticsPanel } from "@/components/operational/IssuanceDiagnosticsPanel";
 import type { DiplomaCertificateFrameProps } from "@/components/credential/DiplomaCertificateFrame";
 import { useToast } from "@/hooks/use-toast";
 import type { Certificado, CursoAlumnoConAlumno } from "@/lib/database.types";
 import { certificadosService, certificadoPublicExplorer } from "@/lib/services/certificados.service";
 import { cursoAlumnosService } from "@/lib/services/curso-alumnos.service";
 import { formatSupabaseUserError } from "@/lib/supabase-error";
+import { cleanRut, displayRut, normalizeRut, rutMatchesSearch, validateRut } from "@/lib/utils/rut";
 
 export default function Certificates() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -71,6 +73,7 @@ export default function Certificates() {
   const [credentialPreviewOpen, setCredentialPreviewOpen] = useState(false);
   const [pendingCredentialIssue, setPendingCredentialIssue] = useState<IssueCertificateParams | null>(null);
   const [credentialIssueSubmitting, setCredentialIssueSubmitting] = useState(false);
+  const [retryCertificadoId, setRetryCertificadoId] = useState<string | null>(null);
 
   const credentialCaptureRef = useRef<DiplomaCaptureHandle | null>(null);
   const { certificados, loading, error: certificadosError, deleteCertificado, emitidosCount, pendientesCount, refetch } =
@@ -79,7 +82,7 @@ export default function Certificates() {
   const { cursos, loading: cursosLoading, error: cursosError } = useCursos();
   const { otec } = useAuth();
   const { isVerified, isConnected } = useOtecWallet();
-  const { state: mintState, issueCertificate, reset: resetMint } = useMintCertificate(credentialCaptureRef);
+  const { state: mintState, issueCertificate, reset: resetMint, lastParamsRef } = useMintCertificate(credentialCaptureRef);
   const { toast } = useToast();
 
   const listsLoading = alumnosLoading || cursosLoading;
@@ -118,6 +121,15 @@ export default function Certificates() {
 
   const approvedCount = useMemo(() => cursoEnrollments.filter((e) => e.aprobado).length, [cursoEnrollments]);
 
+  const mintFailedCount = useMemo(
+    () => certificados.filter((c) => c.nft_status === "mint_failed").length,
+    [certificados]
+  );
+  const pendingOnChainCount = useMemo(
+    () => certificados.filter((c) => c.nft_status === "pending_onchain" || c.nft_status === "retrying").length,
+    [certificados]
+  );
+
   const selectedEnrollment = useMemo(
     () => cursoEnrollments.find((e) => e.alumno_id === selectedAlumno) ?? null,
     [cursoEnrollments, selectedAlumno]
@@ -145,14 +157,19 @@ export default function Certificates() {
   }, [selectedCurso, selectedAlumno, cursoEnrollments]);
 
   const filteredCerts = certificados.filter((c) => {
+    const qRaw = search.trim();
+    if (!qRaw) return true;
     const studentName = c.alumnos ? `${c.alumnos.nombre} ${c.alumnos.apellido}` : "";
     const courseName = c.cursos?.nombre || "";
     const code = certificadosService.hashToCode(c.hash_sha256);
-    const q = search.toLowerCase();
+    const q = qRaw.toLowerCase();
+    const rutQ = cleanRut(qRaw);
+    const studentRut = c.alumnos?.rut ?? "";
     return (
       studentName.toLowerCase().includes(q) ||
       courseName.toLowerCase().includes(q) ||
-      code.toLowerCase().includes(q)
+      code.toLowerCase().includes(q) ||
+      (rutQ.length > 0 && rutMatchesSearch(studentRut, qRaw))
     );
   });
 
@@ -166,12 +183,17 @@ export default function Certificates() {
     return {
       institutionName: pendingCredentialIssue.institutionName,
       studentName: pendingCredentialIssue.studentName,
+      studentRut: pendingCredentialIssue.studentRut,
       courseName: pendingCredentialIssue.courseName,
       courseHours: pendingCredentialIssue.courseHours,
       issueDateLabel,
       verificationCode: "CL-······",
       verifyUrl: `${typeof window !== "undefined" ? window.location.origin : ""}/verificar`,
       isPreview: true,
+      academicLineName: pendingCredentialIssue.academicLineName,
+      academicLineDescription: pendingCredentialIssue.academicLineDescription,
+      bannerUrl: pendingCredentialIssue.academicLineBannerUrl,
+      programUrl: pendingCredentialIssue.programUrl,
     };
   }, [pendingCredentialIssue]);
 
@@ -182,15 +204,17 @@ export default function Certificates() {
     try {
       setCredentialPreviewOpen(false);
       setMintModalOpen(true);
-      const { result, error } = await issueCertificate(params);
+      const { result, error, certificadoId } = await issueCertificate(params);
       setPendingCredentialIssue(null);
       if (result) {
+        setRetryCertificadoId(null);
         await refetch();
         toast({
           title: "Emisión verificada completada",
           description: "Credencial digital con diploma, IPFS y registro blockchain guardada correctamente.",
         });
       } else if (error) {
+        if (certificadoId) setRetryCertificadoId(certificadoId);
         toast({ title: "No se pudo completar la emisión", description: error, variant: "destructive" });
       }
     } finally {
@@ -264,10 +288,14 @@ export default function Certificates() {
         cursoId: curso.id,
         fechaEmision,
         studentName: `${alumno.nombre} ${alumno.apellido}`,
-        studentRut: alumno.rut,
+        studentRut: validateRut(alumno.rut) ? normalizeRut(alumno.rut).formatted : alumno.rut,
         institutionName: otec.nombre,
         courseName: curso.nombre,
         courseHours: curso.horas,
+        academicLineName: curso.lineas_academicas?.nombre ?? null,
+        academicLineDescription: curso.lineas_academicas?.descripcion ?? null,
+        academicLineBannerUrl: curso.lineas_academicas?.banner_url?.trim() || null,
+        programUrl: curso.programa_url?.trim() || null,
       });
       setCredentialPreviewOpen(true);
       return;
@@ -310,6 +338,24 @@ export default function Certificates() {
     setSelectedAlumno("");
     setSelectedCurso("");
     setPendingCredentialIssue(null);
+    setRetryCertificadoId(null);
+  };
+
+  const handleMintRetry = () => {
+    const params = lastParamsRef.current;
+    if (!params) return;
+    setMintModalOpen(true);
+    void issueCertificate(params, { existingCertificadoId: retryCertificadoId ?? undefined }).then(({ result, error, certificadoId }) => {
+      if (result) {
+        setRetryCertificadoId(null);
+        void refetch();
+      } else if (certificadoId) {
+        setRetryCertificadoId(certificadoId);
+      }
+      if (error) {
+        toast({ title: "No se pudo completar la emisión", description: error, variant: "destructive" });
+      }
+    });
   };
 
   const columns = [
@@ -468,6 +514,14 @@ export default function Certificates() {
         </div>
       </div>
 
+      <div className="mb-6">
+        <IssuanceDiagnosticsPanel
+          emitidosOnChainCount={emitidosCount}
+          pendingOnChainCount={pendingOnChainCount}
+          mintFailedCount={mintFailedCount}
+        />
+      </div>
+
       {/* Wallet notice */}
       {!isVerified && (
         <div className="mb-6 flex items-center gap-3 rounded-lg border border-warning/30 bg-warning-muted p-3.5">
@@ -565,7 +619,7 @@ export default function Certificates() {
                     const estado = en.aprobado ? "Aprobado" : "Pendiente de aprobación";
                     return (
                       <SelectItem key={en.id} value={s.id}>
-                        {s.nombre} {s.apellido} — {s.rut} · {estado}
+                        {s.nombre} {s.apellido} — {displayRut(s.rut)} · {estado}
                       </SelectItem>
                     );
                   })}
@@ -645,6 +699,7 @@ export default function Certificates() {
         progress={mintState.progress}
         result={mintState.result}
         error={mintState.error}
+        onRetry={mintState.step === "error" && lastParamsRef.current ? handleMintRetry : undefined}
       />
 
       <DiplomaCaptureHost ref={credentialCaptureRef} />

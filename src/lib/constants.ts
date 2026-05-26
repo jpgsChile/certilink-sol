@@ -12,6 +12,7 @@ export const NAV_ITEMS = [
   { label: "Panel", path: "/dashboard", icon: "LayoutDashboard" },
   { label: "Estudiantes", path: "/estudiantes", icon: "Users" },
   { label: "Cursos", path: "/cursos", icon: "BookOpen" },
+  { label: "Líneas académicas", path: "/lineas-academicas", icon: "GraduationCap" },
   { label: "Certificados", path: "/certificados", icon: "Award" },
 ] as const;
 

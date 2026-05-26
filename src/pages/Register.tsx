@@ -5,9 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BrandLogo } from "@/components/BrandLogo";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { useRutField } from "@/hooks/useRutField";
 import { useToast } from "@/hooks/use-toast";
 import { getAuthErrorMessage } from "@/lib/auth-errors";
+import { validateRut, RUT_MESSAGES } from "@/lib/utils/rut";
 
 export default function Register() {
   const [form, setForm] = useState({
@@ -16,6 +19,7 @@ export default function Register() {
     password: "",
   });
   const [submitting, setSubmitting] = useState(false);
+  const rutInstitucional = useRutField();
   const navigate = useNavigate();
   const { signUp } = useAuth();
   const { toast } = useToast();
@@ -30,9 +34,20 @@ export default function Register() {
       toast({ title: "Error", description: "La contraseña debe tener al menos 6 caracteres", variant: "destructive" });
       return;
     }
+    rutInstitucional.markTouched();
+    const rutTieneTexto = rutInstitucional.value.trim().length > 0;
+    if (rutTieneTexto && !validateRut(rutInstitucional.value)) {
+      toast({ title: RUT_MESSAGES.invalid, description: "Corrija el RUT de la institución o déjelo vacío.", variant: "destructive" });
+      return;
+    }
     setSubmitting(true);
     try {
-      await signUp(form.email, form.password, form.institucion);
+      await signUp(
+        form.email,
+        form.password,
+        form.institucion,
+        rutTieneTexto ? rutInstitucional.getNormalizedStrict()?.formatted ?? null : null
+      );
       toast({
         title: "Institución registrada",
         description: "Su cuenta OTEC está lista. Ya puede usar el panel.",
@@ -76,6 +91,29 @@ export default function Register() {
               required
               disabled={submitting}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="rut-institucional" className="text-sm font-medium text-foreground">
+              RUT institucional (opcional)
+            </Label>
+            <Input
+              id="rut-institucional"
+              placeholder="76.123.456-7"
+              value={rutInstitucional.value}
+              onChange={rutInstitucional.onChange}
+              onBlur={rutInstitucional.onBlur}
+              className={cn("h-11", rutInstitucional.error && "border-destructive focus-visible:ring-destructive")}
+              disabled={submitting}
+              autoComplete="off"
+            />
+            {rutInstitucional.error ? (
+              <p className="text-xs text-destructive">{rutInstitucional.error}</p>
+            ) : rutInstitucional.helperOk ? (
+              <p className="text-xs text-emerald-700">{rutInstitucional.helperOk}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">Si lo indica, se validará y guardará en formato oficial.</p>
+            )}
           </div>
 
           <div className="space-y-2">

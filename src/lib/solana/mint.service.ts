@@ -108,6 +108,9 @@ export async function mintCertificateNFT(params: MintCertificateParams): Promise
       estado: "emitido",
       metadata: metadataJson,
       last_blockchain_error: null,
+      ...(studentWallet.studentWalletId
+        ? { owner_student_wallet_id: studentWallet.studentWalletId }
+        : {}),
     });
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);

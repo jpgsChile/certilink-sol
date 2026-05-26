@@ -9,8 +9,10 @@ interface ImportMetaEnv {
   readonly VITE_ENABLE_SUPABASE_DIAGNOSTICS?: string;
   /** JWT de Pinata (subida IPFS desde el cliente — en producción usar backend). */
   readonly VITE_PINATA_JWT?: string;
-  /** URL pública de la app (metadata / enlaces). Por defecto `window.location.origin`. */
-  readonly VITE_PUBLIC_APP_BASE_URL?: string;
+  /** Clave AES-256-GCM derivada por SHA-256 del texto (Fase 2 custodial en cliente; preferir KMS/Edge en prod). */
+  readonly VITE_STUDENT_WALLET_ENCRYPTION_KEY?: string;
+  /** Secreto compartido con la Edge Function `student-wallet-custody` (header x-certilink-custody-secret). */
+  readonly VITE_EDGE_WALLET_INVOKER_SECRET?: string;
 }
 
 interface ImportMeta {

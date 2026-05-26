@@ -8,6 +8,8 @@ export interface SignUpPayload {
   email: string;
   password: string;
   institucion: string;
+  /** RUT institucional en formato oficial (opcional). */
+  rut?: string | null;
 }
 
 export interface SignInPayload {
@@ -63,12 +65,12 @@ export const authService = {
   readPersistedOtec,
 
   /** Registro vía RPC (hash bcrypt en servidor). */
-  async signUp({ email, password, institucion }: SignUpPayload): Promise<OtecAuthResult> {
+  async signUp({ email, password, institucion, rut }: SignUpPayload): Promise<OtecAuthResult> {
     const { data, error } = await supabase.rpc("certilink_otec_register", {
       p_nombre: institucion.trim(),
       p_email: email.trim(),
       p_password: password,
-      p_rut: null,
+      p_rut: rut?.trim() || null,
       p_direccion: null,
       p_telefono: null,
     });

@@ -1,11 +1,13 @@
 import { supabase } from "@/lib/supabase";
 import type { Curso, CursoInsert, CursoUpdate } from "@/lib/database.types";
 
+const CURSO_SELECT = "*, lineas_academicas ( id, nombre, descripcion, sitio_web, banner_url )";
+
 export const cursosService = {
   async getAll(otecId: string): Promise<Curso[]> {
     const { data, error } = await supabase
       .from("cursos")
-      .select("*")
+      .select(CURSO_SELECT)
       .eq("otec_id", otecId)
       .or("activo.eq.true,activo.is.null")
       .order("created_at", { ascending: false });
@@ -15,7 +17,7 @@ export const cursosService = {
   },
 
   async getById(id: string): Promise<Curso> {
-    const { data, error } = await supabase.from("cursos").select("*").eq("id", id).single();
+    const { data, error } = await supabase.from("cursos").select(CURSO_SELECT).eq("id", id).single();
 
     if (error) throw error;
     return data;
@@ -27,14 +29,14 @@ export const cursosService = {
       activo: curso.activo ?? true,
     };
 
-    const { data, error } = await supabase.from("cursos").insert(payload).select().single();
+    const { data, error } = await supabase.from("cursos").insert(payload).select(CURSO_SELECT).single();
 
     if (error) throw error;
     return data;
   },
 
   async update(id: string, curso: CursoUpdate): Promise<Curso> {
-    const { data, error } = await supabase.from("cursos").update(curso).eq("id", id).select().single();
+    const { data, error } = await supabase.from("cursos").update(curso).eq("id", id).select(CURSO_SELECT).single();
 
     if (error) throw error;
     return data;

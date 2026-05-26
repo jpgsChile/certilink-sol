@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Users,
   BookOpen,
+  GraduationCap,
   Award,
   ChevronLeft,
   X,
@@ -17,6 +18,7 @@ const ICON_MAP: Record<string, ElementType> = {
   LayoutDashboard,
   Users,
   BookOpen,
+  GraduationCap,
   Award,
 };
 

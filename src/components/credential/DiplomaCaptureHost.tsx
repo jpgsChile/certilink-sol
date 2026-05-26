@@ -15,7 +15,7 @@ export const DiplomaCaptureHost = forwardRef<DiplomaCaptureHandle, object>(funct
       setPayload(data);
       await new Promise((r) => requestAnimationFrame(r));
       await new Promise((r) => requestAnimationFrame(r));
-      await new Promise((r) => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 120));
       const node = innerRef.current?.querySelector(".diploma-export-root") as HTMLElement | null;
       if (!node) {
         setPayload(null);

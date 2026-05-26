@@ -24,6 +24,26 @@ export type OtecInsert = Omit<Otec, "id" | "created_at" | "updated_at"> & {
 
 export type OtecUpdate = Partial<Omit<OtecInsert, "id">>;
 
+/** Línea académica institucional (tabla `lineas_academicas`). */
+export interface LineaAcademica {
+  id: string;
+  otec_id: string;
+  nombre: string;
+  descripcion: string | null;
+  sitio_web: string | null;
+  banner_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type LineaAcademicaInsert = Omit<LineaAcademica, "id" | "created_at" | "updated_at"> & {
+  id?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type LineaAcademicaUpdate = Partial<Omit<LineaAcademicaInsert, "otec_id">>;
+
 export interface Alumno {
   id: string;
   otec_id: string;
@@ -46,6 +66,31 @@ export type AlumnoInsert = Omit<Alumno, "id" | "created_at" | "updated_at" | "wa
 
 export type AlumnoUpdate = Partial<Omit<AlumnoInsert, "otec_id">>;
 
+/** Red Solana para filas custodiales (`student_wallets.network`). */
+export type StudentWalletNetwork = "devnet" | "mainnet-beta" | "localnet";
+
+/** Billetera académica custodial (tabla `student_wallets`). */
+export interface StudentWallet {
+  id: string;
+  alumno_id: string;
+  otec_id: string;
+  wallet_address: string;
+  encrypted_private_key: string;
+  blockchain: string;
+  network: string;
+  provider: string;
+  is_custodial: boolean;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type StudentWalletInsert = Omit<StudentWallet, "id" | "created_at" | "updated_at"> & {
+  id?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export interface Curso {
   id: string;
   otec_id: string;
@@ -53,14 +98,20 @@ export interface Curso {
   nombre: string;
   horas: number;
   descripcion: string | null;
+  linea_academica_id: string | null;
+  programa_url: string | null;
   activo: boolean | null;
   created_at: string;
   updated_at: string;
+  /** Presente cuando la consulta incluye la relación PostgREST. */
+  lineas_academicas?: Pick<LineaAcademica, "id" | "nombre" | "descripcion" | "sitio_web" | "banner_url"> | null;
 }
 
 export type CursoInsert = Omit<Curso, "id" | "created_at" | "updated_at" | "activo"> & {
   id?: string;
   activo?: boolean | null;
+  linea_academica_id?: string | null;
+  programa_url?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -130,6 +181,10 @@ export interface Certificado {
   blockchain_retry_count: number | null;
   mint_attempted_at: string | null;
   revoked_tx_hash: string | null;
+  /** Billetera académica custodial que recibió la credencial on-chain (Metaplex token owner). */
+  owner_student_wallet_id: string | null;
+  /** Extensiones académicas (skills, competencias, categorías, logros) — Fase 5. */
+  credential_extensions: Json;
   created_at: string;
   updated_at: string;
 }
@@ -160,6 +215,8 @@ export type CertificadoInsert = Omit<
   | "blockchain_retry_count"
   | "mint_attempted_at"
   | "revoked_tx_hash"
+  | "owner_student_wallet_id"
+  | "credential_extensions"
 > & {
   id?: string;
   tx_hash?: string | null;
@@ -183,6 +240,8 @@ export type CertificadoInsert = Omit<
   blockchain_retry_count?: number | null;
   mint_attempted_at?: string | null;
   revoked_tx_hash?: string | null;
+  owner_student_wallet_id?: string | null;
+  credential_extensions?: Json;
   created_at?: string;
   updated_at?: string;
 };
@@ -206,13 +265,28 @@ export type CertificadoUpdate = Partial<
     | "mint_attempted_at"
     | "fecha_fin"
     | "nota"
+    | "owner_student_wallet_id"
+    | "credential_extensions"
   >
 >;
 
 /** Respuesta de consultas con joins (PostgREST). */
 export interface CertificadoConDetalles extends Certificado {
   alumnos: { nombre: string; apellido: string; rut: string } | null;
-  cursos: { nombre: string; codigo: string; horas: number } | null;
+  cursos: {
+    nombre: string;
+    codigo: string;
+    horas: number;
+    programa_url: string | null;
+    linea_academica_id: string | null;
+    lineas_academicas: {
+      id: string;
+      nombre: string;
+      descripcion: string | null;
+      sitio_web: string | null;
+      banner_url: string | null;
+    } | null;
+  } | null;
   otec: { nombre: string } | null;
 }
 

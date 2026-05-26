@@ -13,7 +13,7 @@ interface AuthContextType {
   otec: Otec | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, institucion: string) => Promise<void>;
+  signUp: (email: string, password: string, institucion: string, rutInstitucional?: string | null) => Promise<void>;
   signOut: () => Promise<void>;
   refreshOtec: () => Promise<void>;
   /** Actualiza estado y sessionStorage sin re-fetch (útil si RLS bloquea SELECT). */
@@ -59,8 +59,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setOtec(o);
   };
 
-  const signUp = async (email: string, password: string, institucion: string) => {
-    const { user: u, otec: o } = await authService.signUp({ email, password, institucion });
+  const signUp = async (
+    email: string,
+    password: string,
+    institucion: string,
+    rutInstitucional?: string | null
+  ) => {
+    const { user: u, otec: o } = await authService.signUp({
+      email,
+      password,
+      institucion,
+      rut: rutInstitucional?.trim() || null,
+    });
     setUser(u);
     setOtec(o);
   };
