@@ -2,6 +2,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { APP_NAME, LOGO_URL } from "@/lib/constants";
 import { SOLANA_NETWORK } from "@/lib/solana/config";
 import { displayRut } from "@/lib/utils/rut";
+import { DEFAULT_CERTIFICATE_ACCENT, institutionInitials } from "@/lib/institution-branding";
 
 export type DiplomaCertificateFrameProps = {
   institutionName: string;
@@ -19,19 +20,22 @@ export type DiplomaCertificateFrameProps = {
   programUrl?: string | null;
   /** Banner institucional (línea académica). Opcional; degradado si no hay imagen. */
   bannerUrl?: string | null;
+  /** Logo institucional (reemplaza iniciales si existe). */
+  logoUrl?: string | null;
+  primaryColor?: string;
+  secondaryColor?: string;
+  certificateAccentColor?: string;
+  signatureName?: string | null;
+  signatureRole?: string | null;
+  signatureImageUrl?: string | null;
+  legalText?: string | null;
+  showBlockchainBadge?: boolean;
 };
 
 /** Etiqueta de red para pie de diploma (sin jerga crypto). */
 function solanaNetworkLabel(): string {
   if (SOLANA_NETWORK === "mainnet-beta") return "Respaldo en red Solana";
   return "Respaldo en red Solana verificada";
-}
-
-function institutionInitials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "OT";
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return `${words[0][0]}${words[1][0]}`.toUpperCase();
 }
 
 function formatProgramDisplay(url: string): string {
@@ -66,13 +70,27 @@ export function DiplomaCertificateFrame({
   academicLineDescription,
   programUrl,
   bannerUrl,
+  logoUrl,
+  primaryColor,
+  secondaryColor,
+  certificateAccentColor = DEFAULT_CERTIFICATE_ACCENT,
+  signatureName,
+  signatureRole,
+  signatureImageUrl,
+  legalText,
+  showBlockchainBadge = true,
 }: DiplomaCertificateFrameProps) {
   const lineaNombre = academicLineName?.trim();
   const lineaDesc = academicLineDescription?.trim();
   const programa = programUrl?.trim();
   const rutLabel = studentRut?.trim() ? displayRut(studentRut) : null;
   const banner = bannerUrl?.trim();
+  const logo = logoUrl?.trim();
   const initials = institutionInitials(institutionName);
+  const accent = certificateAccentColor;
+  const headerBg = primaryColor && secondaryColor
+    ? `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 55%, #334155 100%)`
+    : "linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #334155 100%)";
 
   return (
     <div
@@ -86,8 +104,8 @@ export function DiplomaCertificateFrame({
         fontFamily: serif,
         color: "#0f172a",
         background: "#faf9f6",
-        border: "10px double #b8922a",
-        boxShadow: "inset 0 0 0 1px rgba(184,146,42,0.25)",
+        border: `10px double ${accent}`,
+        boxShadow: `inset 0 0 0 1px ${accent}40`,
       }}
     >
       {/* Fondo decorativo */}
@@ -96,7 +114,7 @@ export function DiplomaCertificateFrame({
         style={{
           position: "absolute",
           inset: 18,
-          border: "1px solid rgba(184,146,42,0.28)",
+          border: `1px solid ${accent}48`,
           pointerEvents: "none",
           zIndex: 1,
         }}
@@ -123,8 +141,8 @@ export function DiplomaCertificateFrame({
           minHeight: 88,
           background: banner
             ? `linear-gradient(90deg, rgba(15,23,42,0.92) 0%, rgba(30,41,59,0.88) 100%), url(${banner}) center/cover no-repeat`
-            : "linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #334155 100%)",
-          borderBottom: "3px solid rgba(184,146,42,0.55)",
+            : headerBg,
+          borderBottom: `3px solid ${accent}8c`,
         }}
       >
         <div
@@ -136,25 +154,49 @@ export function DiplomaCertificateFrame({
             fontFamily: sans,
           }}
         >
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: 14,
-              background: "rgba(255,255,255,0.12)",
-              border: "1px solid rgba(255,255,255,0.22)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 20,
-              fontWeight: 700,
-              color: "#f8fafc",
-              letterSpacing: "0.04em",
-              flexShrink: 0,
-            }}
-          >
-            {initials}
-          </div>
+          {logo ? (
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 14,
+                background: "rgba(255,255,255,0.95)",
+                border: "1px solid rgba(255,255,255,0.22)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                overflow: "hidden",
+                padding: 4,
+              }}
+            >
+              <img
+                src={logo}
+                alt=""
+                style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+              />
+            </div>
+          ) : (
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 14,
+                background: "rgba(255,255,255,0.12)",
+                border: "1px solid rgba(255,255,255,0.22)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 20,
+                fontWeight: 700,
+                color: "#f8fafc",
+                letterSpacing: "0.04em",
+                flexShrink: 0,
+              }}
+            >
+              {initials}
+            </div>
+          )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <p
               style={{
@@ -248,7 +290,7 @@ export function DiplomaCertificateFrame({
               fontSize: 11,
               letterSpacing: "0.32em",
               textTransform: "uppercase",
-              color: "#b8922a",
+              color: accent,
               fontWeight: 700,
               fontFamily: sans,
             }}
@@ -259,7 +301,7 @@ export function DiplomaCertificateFrame({
             style={{
               width: 72,
               height: 2,
-              background: "linear-gradient(90deg, transparent, #b8922a, transparent)",
+              background: `linear-gradient(90deg, transparent, ${accent}, transparent)`,
               margin: "10px auto 0",
             }}
           />
@@ -390,8 +432,25 @@ export function DiplomaCertificateFrame({
             </p>
           </div>
 
-          {/* Columna derecha — blockchain y marca */}
+          {/* Columna derecha — firma, blockchain y marca */}
           <div style={{ textAlign: "right" }}>
+            {(signatureName || signatureImageUrl) ? (
+              <div style={{ marginBottom: 12 }}>
+                {signatureImageUrl ? (
+                  <img
+                    src={signatureImageUrl}
+                    alt=""
+                    style={{ maxHeight: 44, maxWidth: 140, objectFit: "contain", marginLeft: "auto", display: "block" }}
+                  />
+                ) : null}
+                {signatureName ? (
+                  <p style={{ margin: "6px 0 0", fontSize: 12, fontWeight: 600, color: "#0f172a" }}>{signatureName}</p>
+                ) : null}
+                {signatureRole ? (
+                  <p style={{ margin: "2px 0 0", fontSize: 10, color: "#64748b" }}>{signatureRole}</p>
+                ) : null}
+              </div>
+            ) : null}
             <div
               style={{
                 display: "inline-flex",
@@ -400,40 +459,50 @@ export function DiplomaCertificateFrame({
                 gap: 8,
               }}
             >
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 10,
-                  fontWeight: 600,
-                  color: "#047857",
-                  background: "#ecfdf5",
-                  border: "1px solid #a7f3d0",
-                  borderRadius: 999,
-                  padding: "5px 10px",
-                }}
-              >
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
-                Registro inmutable verificado
-              </span>
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 600,
-                  color: "#1e40af",
-                  background: "#eff6ff",
-                  border: "1px solid #bfdbfe",
-                  borderRadius: 999,
-                  padding: "5px 10px",
-                }}
-              >
-                {solanaNetworkLabel()}
-              </span>
+              {showBlockchainBadge ? (
+                <>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: "#047857",
+                      background: "#ecfdf5",
+                      border: "1px solid #a7f3d0",
+                      borderRadius: 999,
+                      padding: "5px 10px",
+                    }}
+                  >
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
+                    Registro inmutable verificado
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: "#1e40af",
+                      background: "#eff6ff",
+                      border: "1px solid #bfdbfe",
+                      borderRadius: 999,
+                      padding: "5px 10px",
+                    }}
+                  >
+                    {solanaNetworkLabel()}
+                  </span>
+                </>
+              ) : null}
             </div>
-            <p style={{ margin: "14px 0 0", fontSize: 10, color: "#64748b", lineHeight: 1.45, maxWidth: 260, marginLeft: "auto" }}>
-              Credencial respaldada por registro distribuido. Consulte la autenticidad en la URL de verificación o escaneando el código QR.
-            </p>
+            {legalText ? (
+              <p style={{ margin: "14px 0 0", fontSize: 9, color: "#64748b", lineHeight: 1.45, maxWidth: 260, marginLeft: "auto" }}>
+                {legalText}
+              </p>
+            ) : (
+              <p style={{ margin: "14px 0 0", fontSize: 10, color: "#64748b", lineHeight: 1.45, maxWidth: 260, marginLeft: "auto" }}>
+                Credencial respaldada por registro distribuido. Consulte la autenticidad en la URL de verificación o escaneando el código QR.
+              </p>
+            )}
             <p style={{ margin: "10px 0 0", fontSize: 9, color: "#94a3b8" }}>
               Emitido mediante <strong style={{ color: "#64748b" }}>{APP_NAME}</strong>
             </p>

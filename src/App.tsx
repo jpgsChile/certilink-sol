@@ -35,6 +35,9 @@ import Verify from './pages/Verify';
 import NotFound from './pages/NotFound';
 import TodosDemo from './pages/TodosDemo';
 import Diagnostics from './pages/Diagnostics';
+import Settings from './pages/Settings';
+import MyAccount from './pages/MyAccount';
+import InstitutionProfilePage from './pages/InstitutionProfile';
 import { isSupabaseDiagnosticsEnabled } from '@/lib/supabase';
 
 // Wallet styles
@@ -123,6 +126,33 @@ const App = () => {
                 element={
                   <ProtectedRoute>
                     <Certificates />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/mi-institucion"
+                element={
+                  <ProtectedRoute>
+                    <InstitutionProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/mi-cuenta"
+                element={
+                  <ProtectedRoute>
+                    <MyAccount />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/configuracion"
+                element={
+                  <ProtectedRoute>
+                    <Settings />
                   </ProtectedRoute>
                 }
               />

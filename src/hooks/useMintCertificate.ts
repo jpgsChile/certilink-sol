@@ -24,6 +24,7 @@ import {
   type CertificateMetadata,
 } from "@/lib/solana/metadata.service";
 import { buildVerifyPageUrl, getPublicAppBaseUrl } from "@/lib/public-app-url";
+import type { DiplomaCertificateFrameProps } from "@/components/credential/DiplomaCertificateFrame";
 
 export type MintStep =
   | "idle"
@@ -79,6 +80,21 @@ export interface IssueCertificateParams {
   academicLineDescription?: string | null;
   academicLineBannerUrl?: string | null;
   programUrl?: string | null;
+  /** Branding institucional para diploma PDF. */
+  diplomaBranding?: Partial<
+    Pick<
+      DiplomaCertificateFrameProps,
+      | "logoUrl"
+      | "primaryColor"
+      | "secondaryColor"
+      | "certificateAccentColor"
+      | "signatureName"
+      | "signatureRole"
+      | "signatureImageUrl"
+      | "legalText"
+      | "showBlockchainBadge"
+    >
+  >;
 }
 
 const STEP_LABELS: Record<MintStep, string> = {
@@ -268,6 +284,7 @@ export function useMintCertificate(captureRef: RefObject<DiplomaCaptureHandle | 
         academicLineDescription: params.academicLineDescription,
         bannerUrl: params.academicLineBannerUrl,
         programUrl: params.programUrl,
+        ...params.diplomaBranding,
       };
 
       const pngBlob = await captureRef.current.captureToPng(diplomaProps);

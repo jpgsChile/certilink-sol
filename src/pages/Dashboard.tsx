@@ -4,6 +4,7 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { StatCard } from "@/components/StatCard";
 import { PageHeader } from "@/components/PageHeader";
 import { WalletStatusCard } from "@/components/WalletStatusCard";
+import { InstitutionProfileStatusCard } from "@/components/InstitutionProfileStatusCard";
 import { useDashboardStats } from "@/hooks/useDashboardStats";
 import { certificadosService } from "@/lib/services/certificados.service";
 
@@ -132,7 +133,7 @@ export default function Dashboard() {
 
         {/* Right column: Wallet Status + Quick Actions */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Wallet Status */}
+          <InstitutionProfileStatusCard />
           <WalletStatusCard />
 
           {/* Quick Actions */}

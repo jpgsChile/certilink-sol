@@ -42,6 +42,7 @@ import { useCertificados } from "@/hooks/useCertificados";
 import { useAlumnos } from "@/hooks/useAlumnos";
 import { useCursos } from "@/hooks/useCursos";
 import { useAuth } from "@/hooks/useAuth";
+import { useInstitutionProfile } from "@/hooks/useInstitutionProfile";
 import { useOtecWallet } from "@/hooks/useOtecWallet";
 import { useMintCertificate, type IssueCertificateParams } from "@/hooks/useMintCertificate";
 import { isPinataConfigured } from "@/lib/services/pinata.service";
@@ -55,6 +56,7 @@ import { certificadosService, certificadoPublicExplorer } from "@/lib/services/c
 import { cursoAlumnosService } from "@/lib/services/curso-alumnos.service";
 import { formatSupabaseUserError } from "@/lib/supabase-error";
 import { cleanRut, displayRut, normalizeRut, rutMatchesSearch, validateRut } from "@/lib/utils/rut";
+import { brandingToDiplomaExtras, resolveInstitutionBranding } from "@/lib/institution-branding";
 
 export default function Certificates() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -81,6 +83,9 @@ export default function Certificates() {
   const { alumnos, loading: alumnosLoading, error: alumnosError } = useAlumnos();
   const { cursos, loading: cursosLoading, error: cursosError } = useCursos();
   const { otec } = useAuth();
+  const { profile } = useInstitutionProfile();
+  const branding = resolveInstitutionBranding(otec, profile);
+  const diplomaBranding = brandingToDiplomaExtras(branding);
   const { isVerified, isConnected } = useOtecWallet();
   const { state: mintState, issueCertificate, reset: resetMint, lastParamsRef } = useMintCertificate(credentialCaptureRef);
   const { toast } = useToast();
@@ -194,6 +199,15 @@ export default function Certificates() {
       academicLineDescription: pendingCredentialIssue.academicLineDescription,
       bannerUrl: pendingCredentialIssue.academicLineBannerUrl,
       programUrl: pendingCredentialIssue.programUrl,
+      logoUrl: pendingCredentialIssue.diplomaBranding?.logoUrl,
+      primaryColor: pendingCredentialIssue.diplomaBranding?.primaryColor,
+      secondaryColor: pendingCredentialIssue.diplomaBranding?.secondaryColor,
+      certificateAccentColor: pendingCredentialIssue.diplomaBranding?.certificateAccentColor,
+      signatureName: pendingCredentialIssue.diplomaBranding?.signatureName,
+      signatureRole: pendingCredentialIssue.diplomaBranding?.signatureRole,
+      signatureImageUrl: pendingCredentialIssue.diplomaBranding?.signatureImageUrl,
+      legalText: pendingCredentialIssue.diplomaBranding?.legalText,
+      showBlockchainBadge: pendingCredentialIssue.diplomaBranding?.showBlockchainBadge,
     };
   }, [pendingCredentialIssue]);
 
@@ -289,13 +303,24 @@ export default function Certificates() {
         fechaEmision,
         studentName: `${alumno.nombre} ${alumno.apellido}`,
         studentRut: validateRut(alumno.rut) ? normalizeRut(alumno.rut).formatted : alumno.rut,
-        institutionName: otec.nombre,
+        institutionName: branding.issuerDisplayName,
         courseName: curso.nombre,
         courseHours: curso.horas,
         academicLineName: curso.lineas_academicas?.nombre ?? null,
         academicLineDescription: curso.lineas_academicas?.descripcion ?? null,
         academicLineBannerUrl: curso.lineas_academicas?.banner_url?.trim() || null,
         programUrl: curso.programa_url?.trim() || null,
+        diplomaBranding: {
+          logoUrl: diplomaBranding.logoUrl,
+          primaryColor: diplomaBranding.primaryColor,
+          secondaryColor: diplomaBranding.secondaryColor,
+          certificateAccentColor: diplomaBranding.certificateAccentColor,
+          signatureName: diplomaBranding.signatureName,
+          signatureRole: diplomaBranding.signatureRole,
+          signatureImageUrl: diplomaBranding.signatureImageUrl,
+          legalText: diplomaBranding.legalText,
+          showBlockchainBadge: diplomaBranding.showBlockchainBadge,
+        },
       });
       setCredentialPreviewOpen(true);
       return;

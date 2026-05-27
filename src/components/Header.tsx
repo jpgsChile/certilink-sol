@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Menu, Bell, Search, LogOut, ShieldCheck } from "lucide-react";
+import { Menu, Bell, Search, LogOut, ShieldCheck, Building2, User, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,10 +10,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { InstitutionLogo } from "@/components/InstitutionLogo";
 import { useAuth } from "@/hooks/useAuth";
+import { useInstitutionProfile } from "@/hooks/useInstitutionProfile";
 import { useToast } from "@/hooks/use-toast";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { resolveInstitutionBranding } from "@/lib/institution-branding";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -37,12 +39,11 @@ function WalletIndicator() {
 
 export function Header({ onMenuClick }: HeaderProps) {
   const { user, otec, signOut } = useAuth();
+  const { profile } = useInstitutionProfile();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const initials = otec?.nombre
-    ? otec.nombre.split(" ").map((w: string) => w[0]).join("").substring(0, 2).toUpperCase()
-    : "CL";
+  const branding = resolveInstitutionBranding(otec, profile);
 
   const handleSignOut = async () => {
     try {
@@ -56,7 +57,6 @@ export function Header({ onMenuClick }: HeaderProps) {
 
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-card px-4 md:px-6">
-      {/* Left section */}
       <div className="flex items-center gap-3">
         <button
           onClick={onMenuClick}
@@ -65,7 +65,6 @@ export function Header({ onMenuClick }: HeaderProps) {
           <Menu className="h-5 w-5" />
         </button>
 
-        {/* Search */}
         <div className="relative hidden md:block">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -76,29 +75,26 @@ export function Header({ onMenuClick }: HeaderProps) {
         </div>
       </div>
 
-      {/* Right section */}
       <div className="flex items-center gap-2">
-        {/* Wallet status indicator */}
         <WalletIndicator />
 
-        {/* Notifications */}
         <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground">
           <Bell className="h-5 w-5" />
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-destructive" />
         </Button>
 
-        {/* User Menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-secondary transition-colors">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-gradient-primary text-primary-foreground text-xs font-semibold">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
+              <InstitutionLogo
+                name={branding.institutionName}
+                logoUrl={branding.logoUrl}
+                size="sm"
+                rounded="lg"
+              />
               <div className="hidden text-left md:block">
                 <p className="text-sm font-medium text-foreground leading-none">
-                  {otec?.nombre || "Admin"}
+                  {branding.institutionName}
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {user?.email || ""}
@@ -109,8 +105,18 @@ export function Header({ onMenuClick }: HeaderProps) {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>Mi cuenta</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Perfil</DropdownMenuItem>
-            <DropdownMenuItem>Configuración</DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" onClick={() => navigate("/mi-institucion")}>
+              <Building2 className="h-3.5 w-3.5" />
+              Mi Institución
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" onClick={() => navigate("/mi-cuenta")}>
+              <User className="h-3.5 w-3.5" />
+              Mi Cuenta
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" onClick={() => navigate("/configuracion")}>
+              <Settings className="h-3.5 w-3.5" />
+              Configuración
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-destructive gap-2" onClick={handleSignOut}>
               <LogOut className="h-3.5 w-3.5" />

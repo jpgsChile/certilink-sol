@@ -24,6 +24,49 @@ export type OtecInsert = Omit<Otec, "id" | "created_at" | "updated_at"> & {
 
 export type OtecUpdate = Partial<Omit<OtecInsert, "id">>;
 
+/** Perfil institucional multi-tenant (tabla `institution_profiles`). */
+export interface InstitutionProfile {
+  id: string;
+  otec_id: string;
+  institution_name: string | null;
+  legal_name: string | null;
+  rut: string | null;
+  description: string | null;
+  email: string | null;
+  phone: string | null;
+  website: string | null;
+  address: string | null;
+  logo_url: string | null;
+  primary_color: string;
+  secondary_color: string;
+  certificate_accent_color: string;
+  issuer_display_name: string | null;
+  signature_name: string | null;
+  signature_role: string | null;
+  signature_image_url: string | null;
+  legal_text: string | null;
+  show_blockchain_badge: boolean;
+  verification_domain: string | null;
+  wallet_address: string | null;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type InstitutionProfileInsert = Omit<
+  InstitutionProfile,
+  "id" | "created_at" | "updated_at" | "deleted_at"
+> & {
+  id?: string;
+  deleted_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type InstitutionProfileUpdate = Partial<
+  Omit<InstitutionProfileInsert, "otec_id">
+>;
+
 /** Línea académica institucional (tabla `lineas_academicas`). */
 export interface LineaAcademica {
   id: string;
@@ -270,6 +313,22 @@ export type CertificadoUpdate = Partial<
   >
 >;
 
+export type InstitutionProfilePublic = Pick<
+  InstitutionProfile,
+  | "logo_url"
+  | "primary_color"
+  | "secondary_color"
+  | "certificate_accent_color"
+  | "issuer_display_name"
+  | "signature_name"
+  | "signature_role"
+  | "signature_image_url"
+  | "legal_text"
+  | "show_blockchain_badge"
+  | "website"
+  | "description"
+>;
+
 /** Respuesta de consultas con joins (PostgREST). */
 export interface CertificadoConDetalles extends Certificado {
   alumnos: { nombre: string; apellido: string; rut: string } | null;
@@ -287,7 +346,20 @@ export interface CertificadoConDetalles extends Certificado {
       banner_url: string | null;
     } | null;
   } | null;
-  otec: { nombre: string } | null;
+  otec: {
+    nombre: string;
+    institution_profiles?: InstitutionProfilePublic | InstitutionProfilePublic[] | null;
+  } | null;
+}
+
+/** Extrae perfil institucional anidado en join PostgREST (otec → institution_profiles). */
+export function extractInstitutionProfileFromCert(
+  cert: Pick<CertificadoConDetalles, "otec">
+): InstitutionProfilePublic | null {
+  const nested = cert.otec?.institution_profiles;
+  if (!nested) return null;
+  if (Array.isArray(nested)) return nested[0] ?? null;
+  return nested;
 }
 
 export type CertilinkAuthUser = {

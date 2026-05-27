@@ -64,6 +64,8 @@ import { useLineasAcademicas } from "@/hooks/useLineasAcademicas";
 import { useCursoAlumnos } from "@/hooks/useCursoAlumnos";
 import { useAlumnos } from "@/hooks/useAlumnos";
 import { useAuth } from "@/hooks/useAuth";
+import { useInstitutionProfile } from "@/hooks/useInstitutionProfile";
+import { brandingToDiplomaExtras, resolveInstitutionBranding } from "@/lib/institution-branding";
 import { useOtecWallet } from "@/hooks/useOtecWallet";
 import { useMintCertificate, type IssueCertificateParams } from "@/hooks/useMintCertificate";
 import { useBulkIssuanceQueue, createBulkJob } from "@/hooks/useBulkIssuanceQueue";
@@ -92,6 +94,9 @@ type EnrollTarget = { cursoId: string; otecId: string };
 export default function Courses() {
   const navigate = useNavigate();
   const { otec } = useAuth();
+  const { profile } = useInstitutionProfile();
+  const branding = resolveInstitutionBranding(otec, profile);
+  const diplomaBranding = brandingToDiplomaExtras(branding);
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -266,13 +271,24 @@ export default function Courses() {
       fechaEmision: fecha,
       studentName: `${al.nombre} ${al.apellido}`,
       studentRut: validateRut(al.rut) ? normalizeRut(al.rut).formatted : al.rut,
-      institutionName: otec.nombre,
+      institutionName: branding.issuerDisplayName,
       courseName: curso.nombre,
       courseHours: curso.horas,
       academicLineName: curso.lineas_academicas?.nombre ?? null,
       academicLineDescription: curso.lineas_academicas?.descripcion ?? null,
       academicLineBannerUrl: curso.lineas_academicas?.banner_url?.trim() || null,
       programUrl: curso.programa_url?.trim() || null,
+      diplomaBranding: {
+        logoUrl: diplomaBranding.logoUrl,
+        primaryColor: diplomaBranding.primaryColor,
+        secondaryColor: diplomaBranding.secondaryColor,
+        certificateAccentColor: diplomaBranding.certificateAccentColor,
+        signatureName: diplomaBranding.signatureName,
+        signatureRole: diplomaBranding.signatureRole,
+        signatureImageUrl: diplomaBranding.signatureImageUrl,
+        legalText: diplomaBranding.legalText,
+        showBlockchainBadge: diplomaBranding.showBlockchainBadge,
+      },
     };
   };
 

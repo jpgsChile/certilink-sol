@@ -28,6 +28,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BrandLogo } from "@/components/BrandLogo";
+import { brandingToDiplomaExtras, resolveBrandingFromCert } from "@/lib/institution-branding";
 import { DiplomaCertificateFrame } from "@/components/credential/DiplomaCertificateFrame";
 import { APP_NAME } from "@/lib/constants";
 import {
@@ -590,7 +591,6 @@ function ScaledDiplomaPreview({
       <div ref={containerRef} className="diploma-elegant-frame-inner overflow-hidden" style={{ height: DIPLOMA_HEIGHT * scale }}>
         <div style={{ width: DIPLOMA_WIDTH, height: DIPLOMA_HEIGHT, transform: `scale(${scale})`, transformOrigin: "top left" }}>
           <DiplomaCertificateFrame
-            institutionName={result.otec?.nombre || "Institución"}
             studentName={personName(result)}
             studentRut={result.alumnos?.rut}
             courseName={courseTitle(result)}
@@ -602,6 +602,21 @@ function ScaledDiplomaPreview({
             academicLineDescription={result.cursos?.lineas_academicas?.descripcion}
             bannerUrl={result.cursos?.lineas_academicas?.banner_url}
             programUrl={result.cursos?.programa_url}
+            {...(() => {
+              const b = brandingToDiplomaExtras(resolveBrandingFromCert(result));
+              return {
+                institutionName: b.institutionName,
+                logoUrl: b.logoUrl,
+                primaryColor: b.primaryColor,
+                secondaryColor: b.secondaryColor,
+                certificateAccentColor: b.certificateAccentColor,
+                signatureName: b.signatureName,
+                signatureRole: b.signatureRole,
+                signatureImageUrl: b.signatureImageUrl,
+                legalText: b.legalText,
+                showBlockchainBadge: b.showBlockchainBadge,
+              };
+            })()}
           />
         </div>
       </div>

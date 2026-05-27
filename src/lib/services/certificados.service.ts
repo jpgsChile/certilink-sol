@@ -26,7 +26,23 @@ const CERT_SELECT = `
     linea_academica_id,
     lineas_academicas ( id, nombre, descripcion, sitio_web, banner_url )
   ),
-  otec ( nombre )
+  otec (
+    nombre,
+    institution_profiles (
+      logo_url,
+      primary_color,
+      secondary_color,
+      certificate_accent_color,
+      issuer_display_name,
+      signature_name,
+      signature_role,
+      signature_image_url,
+      legal_text,
+      show_blockchain_badge,
+      website,
+      description
+    )
+  )
 `;
 
 async function generateHash(alumnoId: string, cursoId: string, fecha: string): Promise<string> {
