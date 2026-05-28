@@ -41,13 +41,15 @@ export function useLineasAcademicas() {
   };
 
   const updateLinea = async (id: string, patch: LineaAcademicaUpdate) => {
-    const updated = await lineasAcademicasService.update(id, patch);
+    if (!otec) throw new Error("Sesión no válida");
+    const updated = await lineasAcademicasService.update(id, patch, otec.id);
     setLineas((prev) => prev.map((l) => (l.id === id ? updated : l)).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")));
     return updated;
   };
 
   const deleteLinea = async (id: string) => {
-    await lineasAcademicasService.remove(id);
+    if (!otec) throw new Error("Sesión no válida");
+    await lineasAcademicasService.remove(id, otec.id);
     setLineas((prev) => prev.filter((l) => l.id !== id));
   };
 

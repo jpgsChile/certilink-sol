@@ -1,5 +1,7 @@
 -- Líneas académicas por OTEC + extensión de cursos (programa URL, FK línea).
 -- Ejecutar en Supabase SQL Editor. Tras aplicar: API → Reload schema.
+-- Cliente con login RPC (`certilink_otec_login`, rol anon sin JWT): aplicar también
+-- supabase/sql/026_lineas_academicas_rpc.sql para CRUD vía SECURITY DEFINER.
 
 create table if not exists public.lineas_academicas (
   id uuid primary key default gen_random_uuid(),
