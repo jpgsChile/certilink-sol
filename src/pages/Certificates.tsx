@@ -52,7 +52,7 @@ import { IssuanceDiagnosticsPanel } from "@/components/operational/IssuanceDiagn
 import type { DiplomaCertificateFrameProps } from "@/components/credential/DiplomaCertificateFrame";
 import { useToast } from "@/hooks/use-toast";
 import type { Certificado, CursoAlumnoConAlumno } from "@/lib/database.types";
-import { certificadosService, certificadoPublicExplorer } from "@/lib/services/certificados.service";
+import { certificadosService, certificadoPublicExplorer, certEnrollmentIssueState, type CertEnrollmentSummary } from "@/lib/services/certificados.service";
 import { cursoAlumnosService } from "@/lib/services/curso-alumnos.service";
 import { formatSupabaseUserError } from "@/lib/supabase-error";
 import { cleanRut, displayRut, normalizeRut, rutMatchesSearch, validateRut } from "@/lib/utils/rut";
@@ -76,6 +76,8 @@ export default function Certificates() {
   const [pendingCredentialIssue, setPendingCredentialIssue] = useState<IssueCertificateParams | null>(null);
   const [credentialIssueSubmitting, setCredentialIssueSubmitting] = useState(false);
   const [retryCertificadoId, setRetryCertificadoId] = useState<string | null>(null);
+  const [cursoCertByAlumno, setCursoCertByAlumno] = useState<Map<string, CertEnrollmentSummary>>(new Map());
+  const [certSummariesLoading, setCertSummariesLoading] = useState(false);
 
   const credentialCaptureRef = useRef<DiplomaCaptureHandle | null>(null);
   const { certificados, loading, error: certificadosError, deleteCertificado, emitidosCount, pendientesCount, refetch } =
@@ -91,7 +93,7 @@ export default function Certificates() {
   const { toast } = useToast();
 
   const listsLoading = alumnosLoading || cursosLoading;
-  const dialogListsLoading = listsLoading || (!!selectedCurso && enrollmentsLoading);
+  const dialogListsLoading = listsLoading || (!!selectedCurso && (enrollmentsLoading || certSummariesLoading));
 
   const loadCursoEnrollments = useCallback(
     async (cursoId: string) => {
@@ -124,7 +126,45 @@ export default function Certificates() {
     void loadCursoEnrollments(selectedCurso);
   }, [selectedCurso, loadCursoEnrollments]);
 
+  const loadCursoCertSummaries = useCallback(
+    async (cursoId: string) => {
+      if (!otec?.id) {
+        setCursoCertByAlumno(new Map());
+        return;
+      }
+      setCertSummariesLoading(true);
+      try {
+        const rows = await certificadosService.listSummariesByCurso(otec.id, cursoId);
+        const map = new Map<string, CertEnrollmentSummary>();
+        for (const row of rows) map.set(row.alumno_id, row);
+        setCursoCertByAlumno(map);
+      } catch {
+        setCursoCertByAlumno(new Map());
+      } finally {
+        setCertSummariesLoading(false);
+      }
+    },
+    [otec?.id]
+  );
+
+  useEffect(() => {
+    if (!selectedCurso) {
+      setCursoCertByAlumno(new Map());
+      return;
+    }
+    void loadCursoCertSummaries(selectedCurso);
+  }, [selectedCurso, loadCursoCertSummaries]);
+
   const approvedCount = useMemo(() => cursoEnrollments.filter((e) => e.aprobado).length, [cursoEnrollments]);
+
+  const eligibleApprovedCount = useMemo(
+    () =>
+      cursoEnrollments.filter((e) => {
+        if (!e.aprobado) return false;
+        return certEnrollmentIssueState(cursoCertByAlumno.get(e.alumno_id)) !== "on_chain";
+      }).length,
+    [cursoEnrollments, cursoCertByAlumno]
+  );
 
   const mintFailedCount = useMemo(
     () => certificados.filter((c) => c.nft_status === "mint_failed").length,
@@ -140,7 +180,15 @@ export default function Certificates() {
     [cursoEnrollments, selectedAlumno]
   );
 
-  const canEmitCredential = Boolean(selectedEnrollment?.aprobado);
+  const selectedCertSummary = useMemo(
+    () => (selectedAlumno ? cursoCertByAlumno.get(selectedAlumno) : undefined),
+    [selectedAlumno, cursoCertByAlumno]
+  );
+
+  const selectedIssueState = certEnrollmentIssueState(selectedCertSummary);
+
+  const canEmitCredential =
+    Boolean(selectedEnrollment?.aprobado) && selectedIssueState !== "on_chain";
 
   useEffect(() => {
     const c = searchParams.get("cursoId");
@@ -159,7 +207,13 @@ export default function Certificates() {
     if (!selectedCurso) return;
     const ids = new Set(cursoEnrollments.map((e) => e.alumno_id));
     if (selectedAlumno && !ids.has(selectedAlumno)) setSelectedAlumno("");
-  }, [selectedCurso, selectedAlumno, cursoEnrollments]);
+    if (
+      selectedAlumno &&
+      certEnrollmentIssueState(cursoCertByAlumno.get(selectedAlumno)) === "on_chain"
+    ) {
+      setSelectedAlumno("");
+    }
+  }, [selectedCurso, selectedAlumno, cursoEnrollments, cursoCertByAlumno]);
 
   const filteredCerts = certificados.filter((c) => {
     const qRaw = search.trim();
@@ -218,7 +272,9 @@ export default function Certificates() {
     try {
       setCredentialPreviewOpen(false);
       setMintModalOpen(true);
-      const { result, error, certificadoId } = await issueCertificate(params);
+      const { result, error, certificadoId } = await issueCertificate(params, {
+        existingCertificadoId: retryCertificadoId ?? undefined,
+      });
       setPendingCredentialIssue(null);
       if (result) {
         setRetryCertificadoId(null);
@@ -279,6 +335,16 @@ export default function Certificates() {
       return;
     }
 
+    const existingCert = await certificadosService.findByEnrollment(otec.id, selectedAlumno, selectedCurso);
+    if (existingCert?.tx_hash) {
+      toast({
+        title: "Credencial ya emitida",
+        description: `Este participante ya tiene credencial verificada (${certificadosService.hashToCode(existingCert.hash_sha256)}).`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Find selected student and course details
     const alumno = alumnos.find((a) => a.id === selectedAlumno);
     const curso = cursos.find((c) => c.id === selectedCurso);
@@ -297,6 +363,7 @@ export default function Certificates() {
       }
 
       setDialogOpen(false);
+      if (existingCert?.id) setRetryCertificadoId(existingCert.id);
       setPendingCredentialIssue({
         alumnoId: alumno.id,
         cursoId: curso.id,
@@ -327,6 +394,15 @@ export default function Certificates() {
     }
 
     try {
+      if (existingCert) {
+        toast({
+          title: "Registro existente",
+          description:
+            "Ya hay un registro para este participante. Conecte su billetera institucional para completar la emisión verificada.",
+          variant: "destructive",
+        });
+        return;
+      }
       const cert = await certificadosService.create(otec.id, selectedAlumno, selectedCurso, fechaEmision);
       const code = certificadosService.hashToCode(cert.hash_sha256);
       toast({
@@ -641,10 +717,20 @@ export default function Certificates() {
                   {cursoEnrollments.map((en) => {
                     const s = en.alumnos;
                     if (!s) return null;
-                    const estado = en.aprobado ? "Aprobado" : "Pendiente de aprobación";
+                    const cert = cursoCertByAlumno.get(s.id);
+                    const issueState = certEnrollmentIssueState(cert);
+                    const aprobacion = en.aprobado ? "Aprobado" : "Pendiente de aprobación";
+                    let credencial = "";
+                    if (issueState === "on_chain" && cert) {
+                      credencial = ` · Credencial emitida (${certificadosService.hashToCode(cert.hash_sha256)})`;
+                    } else if (issueState === "pending_retry") {
+                      credencial = " · Emisión incompleta — puede reintentar";
+                    }
+                    const disabled = !en.aprobado || issueState === "on_chain";
                     return (
-                      <SelectItem key={en.id} value={s.id}>
-                        {s.nombre} {s.apellido} — {displayRut(s.rut)} · {estado}
+                      <SelectItem key={en.id} value={s.id} disabled={disabled}>
+                        {s.nombre} {s.apellido} — {displayRut(s.rut)} · {aprobacion}
+                        {credencial}
                       </SelectItem>
                     );
                   })}
@@ -664,9 +750,25 @@ export default function Certificates() {
                   <span className="font-medium text-foreground">Gestionar → Marcar como aprobado</span>.
                 </p>
               )}
+              {selectedCurso && !enrollmentsLoading && !enrollmentsError && cursoEnrollments.length > 0 && approvedCount > 0 && eligibleApprovedCount === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Todos los participantes aprobados de este curso ya tienen credencial verificada en blockchain.
+                </p>
+              )}
               {selectedEnrollment && !selectedEnrollment.aprobado && (
                 <p className="text-xs text-amber-800 dark:text-amber-200/90">
                   El participante seleccionado aún no está aprobado; no se puede emitir hasta aprobarlo en Cursos.
+                </p>
+              )}
+              {selectedIssueState === "on_chain" && selectedCertSummary && (
+                <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                  Este participante ya tiene credencial emitida ({certificadosService.hashToCode(selectedCertSummary.hash_sha256)}).
+                  Seleccione otro participante elegible.
+                </p>
+              )}
+              {selectedIssueState === "pending_retry" && (
+                <p className="text-xs text-amber-800 dark:text-amber-200/90">
+                  Hay una emisión previa sin completar (IPFS o blockchain). Al confirmar se reutilizará el registro y podrá reintentar.
                 </p>
               )}
             </div>
@@ -708,8 +810,14 @@ export default function Certificates() {
                   !canEmitCredential
                 }
               >
-                {dialogListsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Award className="h-4 w-4" />}
-                Emitir credencial
+                {dialogListsLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <Award className="h-4 w-4" />
+                    {selectedIssueState === "pending_retry" ? "Reintentar emisión" : "Emitir credencial"}
+                  </>
+                )}
               </Button>
             </div>
           </form>

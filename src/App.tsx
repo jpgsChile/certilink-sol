@@ -12,9 +12,7 @@ import {
   WalletModalProvider,
 } from '@solana/wallet-adapter-react-ui';
 
-import {
-  PhantomWalletAdapter,
-} from '@solana/wallet-adapter-wallets';
+import type { Adapter } from '@solana/wallet-adapter-base';
 
 import { AuthProvider } from '@/hooks/useAuth';
 import { Toaster } from '@/components/ui/toaster';
@@ -53,11 +51,12 @@ const App = () => {
     [network]
   );
 
-  // Wallet adapters
-  const wallets = useMemo(
-    () => [new PhantomWalletAdapter()],
-    []
-  );
+  // Wallet adapters: empty array. Phantom (y otras billeteras compatibles)
+  // se auto-registran vía Wallet Standard. Instanciar manualmente el
+  // adaptador deprecado PhantomWalletAdapter duplicaba la billetera y, con
+  // autoConnect, dejaba el botón colgado en "Connecting ..." porque su
+  // connect() no resuelve cuando la extensión ya está inyectada.
+  const wallets = useMemo<Adapter[]>(() => [], []);
 
   return (
     <ConnectionProvider endpoint={endpoint}>

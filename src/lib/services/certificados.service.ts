@@ -224,14 +224,38 @@ export const certificadosService = {
     return data;
   },
 
+  /**
+   * Alinea fechas antes de persistir IPFS/blockchain.
+   * La BD exige `fecha_emision >= fecha_fin` (registros legacy pueden tener inicio de curso vs fin).
+   */
+  async syncEmissionDatesForIssuance(certificadoId: string, fechaEmision: string): Promise<void> {
+    const emission = fechaEmision.slice(0, 10);
+    const { data, error } = await supabase
+      .from("certificados")
+      .select("fecha_fin")
+      .eq("id", certificadoId)
+      .single();
+
+    if (error) throw error;
+
+    const patch: CertificadoUpdate = { fecha_emision: emission };
+    const fin = data.fecha_fin?.slice(0, 10);
+    if (fin && emission < fin) {
+      patch.fecha_fin = emission;
+    }
+
+    const { error: upErr } = await supabase.from("certificados").update(patch).eq("id", certificadoId);
+    if (upErr) throw upErr;
+  },
+
   /** Resumen por curso para emisión masiva (mapa alumno → certificado). */
   async listSummariesByCurso(
     otecId: string,
     cursoId: string
-  ): Promise<Array<Pick<Certificado, "id" | "alumno_id" | "hash_sha256" | "tx_hash">>> {
+  ): Promise<Array<Pick<Certificado, "id" | "alumno_id" | "hash_sha256" | "tx_hash" | "nft_status">>> {
     const { data, error } = await supabase
       .from("certificados")
-      .select("id, alumno_id, hash_sha256, tx_hash")
+      .select("id, alumno_id, hash_sha256, tx_hash, nft_status")
       .eq("otec_id", otecId)
       .eq("curso_id", cursoId)
       .eq("estado", "emitido")
@@ -387,3 +411,17 @@ export const certificadosService = {
 
   hashToCode,
 };
+
+export type CertEnrollmentSummary = Pick<
+  Certificado,
+  "id" | "alumno_id" | "hash_sha256" | "tx_hash" | "nft_status"
+>;
+
+/** Estado de emisión para una inscripción curso–alumno. */
+export function certEnrollmentIssueState(
+  summary: CertEnrollmentSummary | undefined
+): "none" | "on_chain" | "pending_retry" {
+  if (!summary) return "none";
+  if (summary.tx_hash) return "on_chain";
+  return "pending_retry";
+}

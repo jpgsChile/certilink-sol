@@ -892,11 +892,15 @@ export default function Courses() {
                           <div className="min-w-0 flex-1 space-y-0.5">
                             <p className="text-sm font-semibold leading-snug text-foreground">{nombre}</p>
                             <p className="text-xs text-muted-foreground">{displayRut(al?.rut)}</p>
-                            {hasBlockchain && (
+                            {hasBlockchain ? (
                               <p className="text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
                                 Credencial emitida · {certificadosService.hashToCode(cert!.hash_sha256)}
                               </p>
-                            )}
+                            ) : cert ? (
+                              <p className="text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                                Emisión incompleta · puede reintentar desde Certificados
+                              </p>
+                            ) : null}
                           </div>
                         </div>
                         <span
@@ -948,12 +952,13 @@ export default function Courses() {
                             variant="secondary"
                             size="sm"
                             className="h-9 w-full gap-2"
+                            disabled={hasBlockchain}
                             onClick={() => {
                               if (participantsCurso) goEmitCredential(participantsCurso.id, row.alumno_id);
                             }}
                           >
                             <Award className="h-4 w-4 shrink-0" />
-                            Emitir credencial digital
+                            {hasBlockchain ? "Credencial ya emitida" : cert ? "Reintentar emisión" : "Emitir credencial digital"}
                           </Button>
                         )}
                         <div className="flex gap-2">

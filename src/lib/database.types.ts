@@ -306,6 +306,7 @@ export type CertificadoUpdate = Partial<
     | "last_blockchain_error"
     | "blockchain_retry_count"
     | "mint_attempted_at"
+    | "fecha_emision"
     | "fecha_fin"
     | "nota"
     | "owner_student_wallet_id"

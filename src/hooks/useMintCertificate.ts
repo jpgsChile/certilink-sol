@@ -216,6 +216,7 @@ export function useMintCertificate(captureRef: RefObject<DiplomaCaptureHandle | 
           });
         }
         lastCertId = cert.id;
+        await certificadosService.syncEmissionDatesForIssuance(cert.id, params.fechaEmision);
         setStep("creating_record", 8, options);
       } else {
         operationalLog.log({
@@ -235,6 +236,7 @@ export function useMintCertificate(captureRef: RefObject<DiplomaCaptureHandle | 
         if (existing) {
           cert = await certificadosService.getByIdForTenant(otec.id, existing.id);
           lastCertId = cert.id;
+          await certificadosService.syncEmissionDatesForIssuance(cert.id, params.fechaEmision);
           setStep("creating_record", 8, options);
         } else {
           setStep("creating_record", 8, options);
