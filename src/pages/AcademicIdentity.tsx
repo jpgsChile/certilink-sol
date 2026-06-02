@@ -30,11 +30,11 @@ import { certificadosService, certificadoPublicExplorer, certificadoExplorerMint
 import { displayRut } from "@/lib/utils/rut";
 import type { CertificadoConDetalles } from "@/lib/database.types";
 import { APP_NAME } from "@/lib/constants";
+import { buildVerifyPageUrl, getPublicAppBaseUrl } from "@/lib/public-app-url";
 
 function verifyUrlForCert(cert: CertificadoConDetalles): string {
   const code = certificadosService.hashToCode(cert.hash_sha256);
-  const base = (import.meta.env.VITE_PUBLIC_APP_BASE_URL?.trim() || window.location.origin).replace(/\/$/, "");
-  return `${base}/verificar/${encodeURIComponent(code)}`;
+  return buildVerifyPageUrl(code);
 }
 
 function buildShareSummary(params: {
@@ -43,10 +43,7 @@ function buildShareSummary(params: {
   institucion: string;
   certificados: CertificadoConDetalles[];
 }): string {
-  const origin = (import.meta.env.VITE_PUBLIC_APP_BASE_URL?.trim() || (typeof window !== "undefined" ? window.location.origin : "")).replace(
-    /\/$/,
-    ""
-  );
+  const origin = getPublicAppBaseUrl();
   const lines: string[] = [
     `Identidad académica — ${APP_NAME}`,
     `Persona: ${params.nombre}`,
